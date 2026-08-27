@@ -1,0 +1,16 @@
+{
+  "id": "blockchain",
+  "name": "Blockchain",
+  "version": "1.0.0",
+  "network_type": "blockchain",
+  "author": "OSIRIS Team",
+  "description": "Blockchain zincir üstü veri toplama (kripto adresleri, işlemler)",
+  "config_schema": {
+    "rpc_url": {"type": "string", "required": true},
+    "address": {"type": "string", "description": "İzlenecek adres"},
+    "chain": {"type": "string", "default": "ethereum"}
+  },
+  "capabilities": ["json"],
+  "requires_proxy": false,
+  "schedule_default": "*/10 * * * *"
+}

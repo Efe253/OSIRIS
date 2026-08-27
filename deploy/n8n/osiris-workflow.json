@@ -1,0 +1,62 @@
+{
+  "name": "OSIRIS — Yeni Veri Uyarısı",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "seconds", "secondsInterval": 60}]
+        }
+      },
+      "id": "trigger",
+      "name": "Zamanlayıcı",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "http://osiris-api:8000/search",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "query", "value": "{{ $json.query }}"},
+            {"name": "limit", "value": 20}
+          ]
+        }
+      },
+      "id": "search",
+      "name": "OSIRIS Arama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "url": "http://osiris-api:8000/collect",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "plugin_id", "value": "rss"},
+            {"name": "config", "value": "={{ JSON.stringify({feed_url: $json.feed_url}) }}"}
+          ]
+        }
+      },
+      "id": "collect",
+      "name": "OSIRIS Topla",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0]
+    }
+  ],
+  "connections": {
+    "Zamanlayıcı": {
+      "main": [[{"node": "OSIRIS Arama", "type": "main", "index": 0}]]
+    },
+    "OSIRIS Arama": {
+      "main": [[{"node": "OSIRIS Topla", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {"executionOrder": "v1"}
+}

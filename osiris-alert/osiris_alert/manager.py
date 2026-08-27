@@ -53,7 +53,10 @@ class AlertManager:
 
     def _emit(self, alert: dict[str, Any]) -> None:
         payload = json.dumps(alert, ensure_ascii=False)
-        self.redis.publish(self.channel, payload)
+        try:
+            self.redis.publish(self.channel, payload)
+        except redis.RedisError as exc:
+            logger.warning("Redis yayını başarısız: %s", exc)
         for handler in self._handlers:
             try:
                 handler(alert)

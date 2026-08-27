@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  python-tests:
+    name: Python testleri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Bağımlılıkları kur
+        run: |
+          pip install -e ./osiris-sdk
+          pip install -e ./osiris-collector
+          pip install -e ./osiris-pipeline
+          pip install -e ./osiris-graph
+          pip install -e ./osiris-alert
+          pip install -e ./osiris-report
+          pip install -e ./osiris-query
+          pip install -e ./osiris-api
+          pip install pytest
+      - name: Testleri çalıştır
+        run: pytest osiris-pipeline/tests osiris-graph/tests -q
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Ruff kur
+        run: pip install ruff
+      - name: Lint çalıştır
+        run: ruff check osiris-collector osiris-pipeline osiris-graph osiris-alert osiris-report osiris-query osiris-api osiris-cli
+
+  web-ui-build:
+    name: Web UI derleme
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Bağımlılıkları kur
+        run: npm ci
+        working-directory: osiris-web-ui
+      - name: Derle
+        run: npm run build
+        working-directory: osiris-web-ui
