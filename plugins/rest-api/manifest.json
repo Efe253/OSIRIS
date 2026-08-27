@@ -1,0 +1,18 @@
+{
+  "id": "rest-api",
+  "name": "REST API",
+  "version": "1.0.0",
+  "network_type": "api",
+  "author": "OSIRIS Team",
+  "description": "REST API veri toplama",
+  "config_schema": {
+    "endpoint": {"type": "string", "required": true},
+    "method": {"type": "string", "default": "GET"},
+    "headers": {"type": "object", "default": {}},
+    "params": {"type": "object", "default": {}},
+    "json_path": {"type": "string", "description": "Sonuç dizisine giden JSON yolu (örn. data.items)"}
+  },
+  "capabilities": ["json", "text"],
+  "requires_proxy": false,
+  "schedule_default": "0 * * * *"
+}

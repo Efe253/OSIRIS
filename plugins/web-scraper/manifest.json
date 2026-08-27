@@ -1,0 +1,17 @@
+{
+  "id": "web-scraper",
+  "name": "Web Scraper",
+  "version": "1.0.0",
+  "network_type": "www",
+  "author": "OSIRIS Team",
+  "description": "Genel amaçlı web scraper",
+  "config_schema": {
+    "url": {"type": "string", "required": true},
+    "depth": {"type": "integer", "default": 1},
+    "follow_links": {"type": "boolean", "default": false},
+    "css_selector": {"type": "string"}
+  },
+  "capabilities": ["html", "text", "links", "images"],
+  "requires_proxy": false,
+  "schedule_default": "0 */6 * * *"
+}

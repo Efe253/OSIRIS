@@ -1,0 +1,15 @@
+{
+  "id": "rss",
+  "name": "RSS/Atom Feed",
+  "version": "1.0.0",
+  "network_type": "rss",
+  "author": "OSIRIS Team",
+  "description": "RSS/Atom feed okuyucu",
+  "config_schema": {
+    "feed_url": {"type": "string", "required": true},
+    "max_items": {"type": "integer", "default": 50}
+  },
+  "capabilities": ["rss", "atom", "text"],
+  "requires_proxy": false,
+  "schedule_default": "*/15 * * * *"
+}
