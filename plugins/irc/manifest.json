@@ -1,0 +1,17 @@
+{
+  "id": "irc",
+  "name": "IRC",
+  "version": "1.0.0",
+  "network_type": "irc",
+  "author": "OSIRIS Team",
+  "description": "IRC kanal takibi ve mesaj toplama",
+  "config_schema": {
+    "server": {"type": "string", "required": true},
+    "port": {"type": "integer", "default": 6667},
+    "channels": {"type": "array", "required": true},
+    "nickname": {"type": "string", "default": "osiris-bot"}
+  },
+  "capabilities": ["text"],
+  "requires_proxy": false,
+  "schedule_default": "*/5 * * * *"
+}

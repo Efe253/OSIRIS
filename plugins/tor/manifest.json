@@ -1,0 +1,16 @@
+{
+  "id": "tor",
+  "name": "Tor (.onion)",
+  "version": "1.0.0",
+  "network_type": "tor",
+  "author": "OSIRIS Team",
+  "description": "Tor ağı üzerinden .onion site toplama",
+  "config_schema": {
+    "url": {"type": "string", "required": true},
+    "socks5_host": {"type": "string", "default": "127.0.0.1"},
+    "socks5_port": {"type": "integer", "default": 9050}
+  },
+  "capabilities": ["html", "text"],
+  "requires_proxy": true,
+  "schedule_default": "0 */12 * * *"
+}

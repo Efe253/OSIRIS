@@ -1,0 +1,15 @@
+{
+  "id": "shodan",
+  "name": "Shodan",
+  "version": "1.0.0",
+  "network_type": "api",
+  "author": "OSIRIS Team",
+  "description": "Shodan internet tarama API entegrasyonu",
+  "config_schema": {
+    "api_key": {"type": "string", "required": true},
+    "query": {"type": "string", "required": true}
+  },
+  "capabilities": ["json"],
+  "requires_proxy": false,
+  "schedule_default": "0 */6 * * *"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "dns-whois",
+  "name": "DNS & WHOIS",
+  "version": "1.0.0",
+  "network_type": "api",
+  "author": "OSIRIS Team",
+  "description": "Pasif keşif: DNS kayıtları ve WHOIS sorguları",
+  "config_schema": {
+    "domain": {"type": "string", "required": true},
+    "record_types": {"type": "array", "default": ["A", "AAAA", "MX", "NS", "TXT"]}
+  },
+  "capabilities": ["json", "text"],
+  "requires_proxy": false,
+  "schedule_default": "0 */12 * * *"
+}

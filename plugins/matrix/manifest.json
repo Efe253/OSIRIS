@@ -1,0 +1,16 @@
+{
+  "id": "matrix",
+  "name": "Matrix",
+  "version": "1.0.0",
+  "network_type": "matrix",
+  "author": "OSIRIS Team",
+  "description": "Matrix federatif mesajlaşma odalarından veri toplama",
+  "config_schema": {
+    "homeserver": {"type": "string", "required": true},
+    "room_id": {"type": "string", "required": true},
+    "access_token": {"type": "string"}
+  },
+  "capabilities": ["text", "json"],
+  "requires_proxy": false,
+  "schedule_default": "*/5 * * * *"
+}

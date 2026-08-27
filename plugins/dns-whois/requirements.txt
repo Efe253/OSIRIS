@@ -1,0 +1,2 @@
+dnspython>=2.4
+osiris-sdk>=0.1.0
