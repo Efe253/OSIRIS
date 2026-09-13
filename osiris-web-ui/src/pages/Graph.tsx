@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { get, post } from "../api";
+import { useAuth } from "../auth";
 
 const inputCls =
   "w-full rounded-lg border border-osiris-panel bg-osiris-bg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-osiris-accent focus:outline-none";
@@ -10,6 +11,8 @@ interface GraphData {
 }
 
 export default function Graph() {
+  const { role } = useAuth();
+  const canWrite = role !== "viewer";
   const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
   const [error, setError] = useState<string | null>(null);
   const [explore, setExplore] = useState("");
@@ -80,6 +83,7 @@ export default function Graph() {
           )}
         </div>
 
+        {canWrite && (
         <form onSubmit={addRelation} className="rounded-lg border border-osiris-panel bg-osiris-panel/40 p-4">
           <h3 className="mb-2 text-sm font-semibold text-slate-300">İlişki Ekle</h3>
           <div className="space-y-2">
@@ -89,6 +93,7 @@ export default function Graph() {
             <button className="rounded-lg bg-osiris-accent/20 px-4 py-2 text-sm font-semibold text-osiris-accent">Ekle</button>
           </div>
         </form>
+        )}
       </div>
 
       <h3 className="mb-2 mt-6 text-sm font-semibold text-slate-300">Kenarlar (son 100)</h3>

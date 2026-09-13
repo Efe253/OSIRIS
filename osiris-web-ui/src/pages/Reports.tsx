@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { post } from "../api";
+import { useAuth } from "../auth";
 
 const inputCls =
   "w-full rounded-lg border border-osiris-panel bg-osiris-bg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-osiris-accent focus:outline-none";
 const areaCls = `${inputCls} min-h-24 font-mono text-xs`;
 
 export default function Reports() {
+  const { role } = useAuth();
+  const canWrite = role !== "viewer";
   const [title, setTitle] = useState("");
   const [scope, setScope] = useState("");
   const [summary, setSummary] = useState("");
@@ -56,6 +59,9 @@ export default function Reports() {
     <section>
       <h2 className="mb-4 text-lg font-semibold">Rapor Üretici</h2>
       {error && <p className="mb-3 text-sm text-red-400">Hata: {error}</p>}
+      {!canWrite ? (
+        <p className="text-sm text-slate-500">Rapor üretmek için analyst rolü gerekir.</p>
+      ) : (
       <form onSubmit={generate} className="space-y-3 rounded-lg border border-osiris-panel bg-osiris-panel/40 p-4">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Başlık *" required className={inputCls} />
         <input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="Kapsam" className={inputCls} />
@@ -65,6 +71,7 @@ export default function Reports() {
           {busy ? "Üretiliyor..." : "Rapor Üret"}
         </button>
       </form>
+      )}
       {markdown && (
         <div className="mt-4">
           <div className="mb-2 flex justify-end">

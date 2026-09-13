@@ -65,6 +65,7 @@ function Shell() {
           <Route path="/graph" element={<Graph />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="*" element={<Dashboard />} />
         </Routes>
       </main>
     </div>

@@ -45,7 +45,7 @@ export default function Dashboard() {
         <Card label="Aktif Uyarı" value={stats.alerts} />
       </div>
 
-      <h3 className="mb-3 mt-8 text-md font-semibold">Son Toplananlar</h3>
+      <h3 className="mb-3 mt-8 text-base font-semibold">Son Toplananlar</h3>
       {recent.length === 0 ? (
         <p className="text-sm text-slate-500">Henüz öğe yok — Kaynaklar sayfasından toplama başlatın.</p>
       ) : (

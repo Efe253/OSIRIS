@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { del, get, post, type Plugin, type Source } from "../api";
+import { useAuth } from "../auth";
 
 const inputCls =
   "w-full rounded-lg border border-osiris-panel bg-osiris-bg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-osiris-accent focus:outline-none";
@@ -12,6 +13,8 @@ function healthBadge(s: Source) {
 }
 
 export default function Sources() {
+  const { role } = useAuth();
+  const canWrite = role !== "viewer";
   const [sources, setSources] = useState<Source[]>([]);
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -96,12 +99,14 @@ export default function Sources() {
     <section>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Kaynaklar ({sources.length})</h2>
-        <button
-          onClick={() => setShowAdd((v) => !v)}
-          className="rounded-lg bg-osiris-accent/20 px-4 py-2 text-sm font-semibold text-osiris-accent hover:bg-osiris-accent/30"
-        >
-          + Kaynak Ekle
-        </button>
+        {canWrite && (
+          <button
+            onClick={() => setShowAdd((v) => !v)}
+            className="rounded-lg bg-osiris-accent/20 px-4 py-2 text-sm font-semibold text-osiris-accent hover:bg-osiris-accent/30"
+          >
+            + Kaynak Ekle
+          </button>
+        )}
       </div>
       {error && <p className="mb-3 text-sm text-red-400">Hata: {error}</p>}
 
@@ -161,6 +166,7 @@ export default function Sources() {
                   {s.avg_response_ms != null && ` · ${s.avg_response_ms}ms`}
                 </td>
                 <td className="px-4 py-2">
+                  {canWrite ? (
                   <div className="flex gap-2">
                     <button
                       onClick={() => runCollect(s.id)}
@@ -176,6 +182,9 @@ export default function Sources() {
                       Sil
                     </button>
                   </div>
+                  ) : (
+                    <span className="text-xs text-slate-600">salt-okunur</span>
+                  )}
                 </td>
               </tr>
             ))}
