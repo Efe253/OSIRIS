@@ -17,6 +17,21 @@ import time
 
 _ISSUER = "osiris"
 
+# Rol hiyerarşisi (doküman §10.3 — RBAC). Sayı büyüdükçe yetki artar.
+ROLES: dict[str, int] = {"viewer": 1, "analyst": 2, "admin": 3}
+
+
+def role_satisfies(have: str, need: str) -> bool:
+    """`have` rolü `need` eşiğini karşılıyor mu? Bilinmeyen rol = yetkisiz."""
+    return ROLES.get(have, 0) >= ROLES.get(need, 99)
+
+
+def hash_api_key(raw_key: str) -> str:
+    """API anahtarının SHA-256 özeti (DB'de ham değer saklanmaz)."""
+    if not raw_key:
+        raise ValueError("Anahtar boş olamaz")
+    return hashlib.sha256(raw_key.encode()).hexdigest()
+
 
 def _b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
@@ -32,14 +47,23 @@ def _b64url_decode(data: str) -> bytes:
         raise ValueError("Geçersiz base64url") from exc
 
 
-def create_token(subject: str, secret: str, ttl_seconds: int = 3600) -> dict[str, object]:
+def create_token(subject: str, secret: str, ttl_seconds: int = 3600,
+                 role: str = "viewer") -> dict[str, object]:
     """Kısa ömürlü erişim jetonu üretir."""
     if not secret or not subject:
         raise ValueError("subject ve secret gerekli")
+    if role not in ROLES:
+        raise ValueError(f"Geçersiz rol: {role!r}")
     ttl_seconds = max(60, min(int(ttl_seconds), 86400))
     now = int(time.time())
     header = {"alg": "HS256", "typ": "JWT"}
-    claims = {"iss": _ISSUER, "sub": str(subject)[:200], "iat": now, "exp": now + ttl_seconds}
+    claims = {
+        "iss": _ISSUER,
+        "sub": str(subject)[:200],
+        "role": role,
+        "iat": now,
+        "exp": now + ttl_seconds,
+    }
     h_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
     c_b64 = _b64url_encode(json.dumps(claims, separators=(",", ":")).encode())
     signing_input = f"{h_b64}.{c_b64}".encode("ascii")
@@ -84,3 +108,19 @@ def verify_token(token: str, secret: str, leeway_seconds: int = 60) -> str:
     if not sub or not isinstance(sub, str):
         raise ValueError("Subject yok")
     return sub
+
+
+def verify_token_with_role(token: str, secret: str,
+                           leeway_seconds: int = 60) -> tuple[str, str]:
+    """Jetonu doğrular, `(sub, role)` döner.
+
+    `role` claim'i olmayan eski jetonlar `viewer` sayılır (geriye uyumlu).
+    Bilinmeyen rol reddedilir (fail-closed).
+    """
+    sub = verify_token(token, secret, leeway_seconds)
+    parts = token.split(".")
+    claims = json.loads(_b64url_decode(parts[1]))
+    role = claims.get("role", "viewer")
+    if role not in ROLES:
+        raise ValueError(f"Bilinmeyen rol: {role!r}")
+    return sub, role

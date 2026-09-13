@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+from collections import defaultdict, deque
 from collections.abc import Callable
 from typing import Any
 
@@ -25,6 +27,9 @@ class AlertManager:
         self,
         redis_url: str | None = "redis://localhost:6379/0",
         channel: str = "osiris:alerts",
+        anomaly_window: int = 100,
+        anomaly_threshold: float = 3.0,
+        anomaly_min_samples: int = 10,
     ) -> None:
         # redis_url=None → yayın yapma (test/offline modu), handler'lar yine çalışır
         self._redis_url = redis_url
@@ -32,6 +37,13 @@ class AlertManager:
         self.channel = channel
         self._handlers: list[Callable[[dict[str, Any]], None]] = []
         self._muted: set[str] = set()
+        # Anomali bazı: metrik adı → kayan pencere (yalnızca bellek-içi)
+        self._anomaly_window = max(10, min(int(anomaly_window), 10_000))
+        self._anomaly_threshold = max(0.5, min(float(anomaly_threshold), 10.0))
+        self._anomaly_min_samples = max(5, min(int(anomaly_min_samples), 1000))
+        self._baselines: dict[str, deque[float]] = defaultdict(
+            lambda: deque(maxlen=self._anomaly_window)
+        )
 
     @property
     def redis(self) -> redis.Redis | None:
@@ -76,6 +88,53 @@ class AlertManager:
                 triggered.append(alert)
                 self._emit(alert)
         return triggered
+
+    def record_metric(self, name: str, value: float) -> None:
+        """Anomali tabanı için ölçüm kaydeder (örn. saatlik öğe sayısı)."""
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(v):
+            return
+        self._baselines[str(name)[:200]].append(v)
+
+    def check_anomaly(self, name: str, value: float) -> dict[str, Any] | None:
+        """z-skoru eşiği aşarsa uyarı sözlüğü döner (yoksa None).
+
+        Isınma dönemi (min_samples) dolmadan None döner. Yeni değer tabana
+        DAHİL EDİLMEZ — önce kontrol edilir, çağrıcı record_metric çağırır.
+        """
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(v):
+            return None
+        samples = self._baselines.get(str(name)[:200], deque())
+        if len(samples) < self._anomaly_min_samples:
+            return None
+        mean = sum(samples) / len(samples)
+        var = sum((s - mean) ** 2 for s in samples) / len(samples)
+        stdev = math.sqrt(var)
+        if stdev == 0:
+            anomalous = v != mean
+            z = math.inf if anomalous else 0.0
+        else:
+            z = (v - mean) / stdev
+            anomalous = abs(z) > self._anomaly_threshold
+        if not anomalous:
+            return None
+        alert = {
+            "metric": str(name)[:200],
+            "value": v,
+            "mean": mean,
+            "stdev": stdev,
+            "z_score": z,
+            "samples": len(samples),
+        }
+        self._emit(alert)
+        return alert
 
     def _emit(self, alert: dict[str, Any]) -> None:
         try:

@@ -141,3 +141,86 @@ def test_token_endpoint(monkeypatch) -> None:
     r = c.post("/auth/token", json={"api_key": "test-key"})
     assert r.status_code == 200 and r.json()["token_type"] == "bearer"
     assert c.post("/auth/token", json={"api_key": "nope"}).status_code == 401
+
+
+def test_viewer_forbidden_on_write_endpoints(monkeypatch) -> None:
+    from osiris_api.auth import create_token
+
+    c = make_client(monkeypatch)
+    viewer = create_token("v", "test-jwt-secret", role="viewer")["access_token"]
+    vh = {"Authorization": f"Bearer {viewer}"}
+    assert c.post("/collect", json={"plugin_id": "x", "config": {}},
+                  headers=vh).status_code == 403
+    assert c.post("/graph/relation",
+                  json={"source": "a", "target": "b"},
+                  headers=vh).status_code == 403
+    # okuma serbest
+    assert c.get("/plugins", headers=vh).status_code == 200
+    analyst = create_token("a", "test-jwt-secret", role="analyst")["access_token"]
+    ah = {"Authorization": f"Bearer {analyst}"}
+    assert c.post("/graph/relation",
+                  json={"source": "a", "target": "b"},
+                  headers=ah).status_code == 200
+
+
+def test_admin_only_key_management(monkeypatch) -> None:
+    import sys
+    import types
+
+    import psycopg  # noqa: F401
+    from osiris_api.auth import create_token
+
+    c = make_client(monkeypatch)
+    analyst = create_token("a", "test-jwt-secret", role="analyst")["access_token"]
+    ah = {"Authorization": f"Bearer {analyst}"}
+    assert c.get("/auth/keys", headers=ah).status_code == 403
+
+    executed = []
+    rows = [[("user-1",), ("key-1",)]]
+
+    class FakeCur:
+        def execute(self, q, p=None):
+            executed.append(q)
+
+        def fetchone(self):
+            return rows[0].pop(0) if rows[0] else None
+
+        def fetchall(self):
+            return []
+
+        @property
+        def rowcount(self):
+            return 1
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def cursor(self):
+            return FakeCur()
+
+        def commit(self):
+            pass
+
+    fake = types.ModuleType("psycopg")
+    fake.connect = lambda *a, **k: FakeConn()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "psycopg", fake)
+    op = create_token("op", "test-jwt-secret", role="admin")["access_token"]
+    oh = {"Authorization": f"Bearer {op}"}
+    r = c.post("/auth/keys", json={"username": "ali", "role": "viewer"},
+               headers=oh)
+    assert r.status_code == 200
+    assert r.json()["api_key"].startswith("osiris_")
+    assert "api_key" not in str(c.get("/auth/keys", headers=oh).json())
+    assert c.delete("/auth/keys/key-1", headers=oh).status_code == 200
+    assert c.post("/auth/keys", json={"username": "x", "role": "kok"},
+                  headers=oh).status_code == 400

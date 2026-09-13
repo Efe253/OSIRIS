@@ -39,9 +39,53 @@ if not API_KEY:
 _collector = CollectorManager(redis_url=REDIS_URL)
 _collector_loaded = False
 _query = QueryEngine(DATABASE_URL)
-_graph = GraphEngine()
+_graph = GraphEngine(database_url=DATABASE_URL)
+_graph_loaded = False
 
 _PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+
+
+def get_graph() -> GraphEngine:
+    """Grafı ilk kullanımda DB'den besler (best-effort kalıcılık)."""
+    global _graph_loaded
+    if not _graph_loaded:
+        _graph_loaded = True
+        try:
+            _graph.load_from_db()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Graf yüklenemedi: %s", exc)
+    return _graph
+
+
+def _lookup_db_key(raw_key: str) -> dict[str, str] | None:
+    """Veritabanındaki kullanıcı anahtarını çözer (hash karşılaştırma)."""
+    from osiris_api.auth import hash_api_key
+
+    try:
+        import psycopg
+
+        with psycopg.connect(DATABASE_URL, connect_timeout=3) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT u.username, u.role::text FROM api_keys k
+                    JOIN users u ON u.id = k.user_id
+                    WHERE k.key_hash = %s AND NOT k.revoked
+                    """,
+                    (hash_api_key(raw_key),),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                cur.execute(
+                    "UPDATE api_keys SET last_used_at = NOW() WHERE key_hash = %s",
+                    (hash_api_key(raw_key),),
+                )
+                conn.commit()
+                return {"user": row[0], "role": row[1]}
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Anahtar araması atlandı: %s", exc)
+        return None
 
 
 def _check_api_key(provided: str | None) -> bool:
@@ -52,24 +96,72 @@ def _check_api_key(provided: str | None) -> bool:
     return _hmac.compare_digest(provided, API_KEY)
 
 
+def resolve_identity(
+    x_api_key: str | None = None,
+    authorization: str | None = None,
+) -> dict[str, str] | None:
+    """Kimliği çözer: operatör anahtarı → DB anahtarı → Bearer JWT."""
+    if _check_api_key(x_api_key):
+        return {"user": "operator", "role": "admin"}
+    if authorization and authorization.lower().startswith("bearer "):
+        from osiris_api.auth import verify_token_with_role
+
+        try:
+            sub, role = verify_token_with_role(authorization[7:].strip(), JWT_SECRET)
+            return {"user": sub, "role": role}
+        except ValueError:
+            pass
+    if x_api_key:
+        ident = _lookup_db_key(x_api_key)
+        if ident is not None:
+            return ident
+    return None
+
+
+def _require_role(
+    minimum: str,
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, str]:
+    from osiris_api.auth import role_satisfies
+
+    if not API_KEY:
+        return {"user": "anonymous", "role": "admin"}  # açık mod
+    ident = resolve_identity(x_api_key, authorization)
+    if ident is None:
+        raise HTTPException(status_code=401, detail="Geçersiz kimlik bilgisi")
+    if not role_satisfies(ident["role"], minimum):
+        raise HTTPException(status_code=403, detail="Yetki yetersiz")
+    return ident
+
+
+def require_viewer(
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, str]:
+    return _require_role("viewer", x_api_key, authorization)
+
+
+def require_analyst(
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, str]:
+    return _require_role("analyst", x_api_key, authorization)
+
+
+def require_admin(
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, str]:
+    return _require_role("admin", x_api_key, authorization)
+
+
 def require_auth(
     x_api_key: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
 ) -> None:
-    """X-API-Key veya Bearer JWT kabul eder (doküman §10.3)."""
-    if not API_KEY:
-        return  # açık mod (güvenilir ağ varsayımı, başlangıçta uyarılır)
-    if _check_api_key(x_api_key):
-        return
-    if authorization and authorization.lower().startswith("bearer "):
-        from osiris_api.auth import verify_token
-
-        try:
-            verify_token(authorization[7:].strip(), JWT_SECRET)
-            return
-        except ValueError:
-            pass
-    raise HTTPException(status_code=401, detail="Geçersiz kimlik bilgisi")
+    """Geriye uyumlu: herhangi bir geçerli kimlik (viewer eşiği)."""
+    require_viewer(x_api_key, authorization)
 
 
 # Geriye uyumluluk: eski bağımlılık adı
@@ -126,23 +218,120 @@ def health() -> dict[str, str]:
 
 class TokenRequest(BaseModel):
     api_key: str = Field(min_length=1, max_length=500)
+    role: str = Field(default="viewer", max_length=32)
 
 
 @app.post("/auth/token")
 def issue_token(req: TokenRequest) -> dict[str, object]:
-    """API anahtarı karşılığında kısa ömürlü JWT üretir (1 saat)."""
+    """Operatör anahtarı karşılığında kısa ömürlü JWT üretir (1 saat)."""
     if not API_KEY or not JWT_SECRET:
         raise HTTPException(status_code=404, detail="Jeton üretimi kapalı")
     if not _check_api_key(req.api_key):
         raise HTTPException(status_code=401, detail="Geçersiz kimlik bilgisi")
-    from osiris_api.auth import create_token
+    from osiris_api.auth import ROLES, create_token
 
-    token = create_token("api-client", JWT_SECRET)
-    _audit("auth.token", None, None)
+    if req.role not in ROLES:
+        raise HTTPException(status_code=400, detail="Geçersiz rol")
+    token = create_token("api-client", JWT_SECRET, role=req.role)
+    _audit("auth.token", None, {"role": req.role})
     return token
 
 
-@app.get("/plugins", dependencies=[Depends(require_api_key)])
+class ApiKeyRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=200)
+    role: str = Field(default="viewer", max_length=32)
+    name: str = Field(default="", max_length=200)
+
+
+@app.post("/auth/keys", dependencies=[Depends(require_admin)])
+def create_api_key(req: ApiKeyRequest) -> dict[str, str]:
+    """Kullanıcıya API anahtarı üretir (ham değer BİR KEZ döner)."""
+    import secrets
+
+    from osiris_api.auth import ROLES, hash_api_key
+
+    if req.role not in ROLES:
+        raise HTTPException(status_code=400, detail="Geçersiz rol")
+    raw_key = f"osiris_{secrets.token_urlsafe(32)}"
+    try:
+        import psycopg
+
+        with psycopg.connect(DATABASE_URL, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO users (username, role)
+                    VALUES (%s, %s)
+                    ON CONFLICT (username)
+                    DO UPDATE SET role = EXCLUDED.role
+                    RETURNING id::text
+                    """,
+                    (req.username, req.role),
+                )
+                user_id = cur.fetchone()[0]
+                cur.execute(
+                    """
+                    INSERT INTO api_keys (user_id, key_hash, key_prefix, name)
+                    VALUES (%s::uuid, %s, %s, %s)
+                    RETURNING id::text
+                    """,
+                    (user_id, hash_api_key(raw_key), raw_key[:8], req.name[:200]),
+                )
+                key_id = cur.fetchone()[0]
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Anahtar üretilemedi")
+        raise HTTPException(status_code=500, detail="Anahtar üretilemedi") from exc
+    _audit("auth.key.create", req.username, {"role": req.role, "key_id": key_id})
+    return {"id": key_id, "api_key": raw_key, "role": req.role}
+
+
+@app.get("/auth/keys", dependencies=[Depends(require_admin)])
+def list_api_keys() -> list[dict[str, Any]]:
+    """Anahtarları listeler (ham değerler ASLA dönülmez)."""
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        with psycopg.connect(DATABASE_URL, connect_timeout=5,
+                             row_factory=dict_row) as conn:
+            rows = conn.execute(
+                """
+                SELECT k.id::text AS id, u.username, u.role::text AS role,
+                       k.key_prefix, k.name, k.revoked, k.created_at, k.last_used_at
+                FROM api_keys k JOIN users u ON u.id = k.user_id
+                ORDER BY k.created_at DESC LIMIT 200
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Liste okunamadı") from exc
+
+
+@app.delete("/auth/keys/{key_id}", dependencies=[Depends(require_admin)])
+def revoke_api_key(key_id: str) -> dict[str, str]:
+    """Anahtarı iptal eder (silmez — denetim izi kalır)."""
+    try:
+        import psycopg
+
+        with psycopg.connect(DATABASE_URL, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE api_keys SET revoked = TRUE WHERE id::text = %s",
+                    (key_id,),
+                )
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Anahtar bulunamadı")
+            conn.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="İptal başarısız") from exc
+    _audit("auth.key.revoke", None, {"key_id": key_id})
+    return {"status": "revoked"}
+
+
+@app.get("/plugins", dependencies=[Depends(require_viewer)])
 def list_plugins() -> list[dict[str, str]]:
     collector = get_collector()
     return [
@@ -151,7 +340,7 @@ def list_plugins() -> list[dict[str, str]]:
     ]
 
 
-@app.post("/collect", dependencies=[Depends(require_api_key)])
+@app.post("/collect", dependencies=[Depends(require_analyst)])
 def collect(req: CollectRequest) -> dict[str, Any]:
     collector = get_collector()
     if req.plugin_id not in collector.plugins:
@@ -169,7 +358,7 @@ def collect(req: CollectRequest) -> dict[str, Any]:
     return {"items": len(result.items), "metadata": result.metadata}
 
 
-@app.post("/search", dependencies=[Depends(require_api_key)])
+@app.post("/search", dependencies=[Depends(require_viewer)])
 def search(req: SearchRequest) -> list[dict[str, Any]]:
     try:
         rows = _query.fulltext_search(req.query, req.limit)
@@ -182,7 +371,7 @@ def search(req: SearchRequest) -> list[dict[str, Any]]:
     return rows
 
 
-@app.post("/search/entity", dependencies=[Depends(require_api_key)])
+@app.post("/search/entity", dependencies=[Depends(require_viewer)])
 def entity_search(req: EntitySearchRequest) -> list[dict[str, Any]]:
     try:
         return _query.entity_search(req.entity_type, req.value, req.limit)
@@ -193,21 +382,26 @@ def entity_search(req: EntitySearchRequest) -> list[dict[str, Any]]:
         raise HTTPException(status_code=500, detail="Arama başarısız") from exc
 
 
-@app.get("/graph", dependencies=[Depends(require_api_key)])
+@app.get("/graph", dependencies=[Depends(require_viewer)])
 def graph() -> dict[str, Any]:
     import json
 
     try:
-        return json.loads(_graph.to_json())
+        return json.loads(get_graph().to_json())
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail="Graf okunamadı") from exc
 
 
-@app.post("/graph/relation", dependencies=[Depends(require_api_key)])
+@app.post("/graph/relation", dependencies=[Depends(require_analyst)])
 def graph_add(req: GraphAddRequest) -> dict[str, str]:
-    _graph.add_entity(req.source)
-    _graph.add_entity(req.target)
-    _graph.add_relation(req.source, req.target, req.relation_type)
+    g = get_graph()
+    g.add_entity(req.source)
+    g.add_entity(req.target)
+    g.add_relation(req.source, req.target, req.relation_type)
+    try:
+        g.save_to_db()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Graf persist atlandı: %s", exc)
     return {"status": "ok"}
 
 

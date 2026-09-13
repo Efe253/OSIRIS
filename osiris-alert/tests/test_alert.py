@@ -63,3 +63,29 @@ def test_redis_failure_swallowed() -> None:
     out = m.check_item({"id": "i", "cleaned_content": "x", "title": ""},
                        [{"id": "q", "name": "N", "query_text": "x", "alert_enabled": True}])
     assert len(out) == 1
+
+
+def test_anomaly_detector() -> None:
+    from osiris_alert.manager import AlertManager
+
+    m = AlertManager(redis_url=None, anomaly_min_samples=5)
+    assert m.check_anomaly("hz", 10) is None  # ısınma
+    for v in [10, 11, 9, 10, 12, 10, 11, 9, 10, 11]:
+        m.record_metric("hz", v)
+    assert m.check_anomaly("hz", 10) is None
+    spike = m.check_anomaly("hz", 100)
+    assert spike is not None and spike["z_score"] > 3
+    assert m.check_anomaly("hz", "bozuk") is None  # type: ignore[arg-type]
+    assert m.check_anomaly("hz", float("inf")) is None
+    m.record_metric("hz", "bozuk")  # sessizce yutulur
+    m.record_metric("hz", float("nan"))
+
+
+def test_anomaly_zero_variance() -> None:
+    from osiris_alert.manager import AlertManager
+
+    m = AlertManager(redis_url=None, anomaly_min_samples=4)
+    for _ in range(6):
+        m.record_metric("sabit", 7)
+    assert m.check_anomaly("sabit", 7) is None
+    assert m.check_anomaly("sabit", 9) is not None
