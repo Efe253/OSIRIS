@@ -5,6 +5,7 @@ Bkz. doküman §5.8.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -332,12 +333,78 @@ def revoke_api_key(key_id: str) -> dict[str, str]:
 
 
 @app.get("/plugins", dependencies=[Depends(require_viewer)])
-def list_plugins() -> list[dict[str, str]]:
+def list_plugins() -> list[dict[str, Any]]:
     collector = get_collector()
-    return [
-        {"id": pid, "name": p.name, "network_type": p.network_type}
-        for pid, p in collector.plugins.items()
-    ]
+    out = []
+    for pid, p in collector.plugins.items():
+        try:
+            manifest = collector.get_manifest(pid)
+        except (KeyError, ValueError):
+            manifest = {}
+        out.append({
+            "id": pid,
+            "name": p.name,
+            "network_type": p.network_type,
+            "description": manifest.get("description", ""),
+            "config_schema": manifest.get("config_schema", {}),
+            "schedule_default": manifest.get("schedule_default", ""),
+        })
+    return out
+
+
+def _db():
+    """dict satırlı kısa ömürlü DB bağlantısı (testlerde yamalanabilir)."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    return psycopg.connect(DATABASE_URL, connect_timeout=5, row_factory=dict_row)
+
+
+@app.get("/stats", dependencies=[Depends(require_viewer)])
+def stats() -> dict[str, Any]:
+    """Panel için sayaçlar: kaynak/öğe/varlık/kenar/sorgu."""
+    try:
+        with _db() as conn:
+            counts = {}
+            for key, table, extra in [
+                ("sources", "sources", ""),
+                ("sources_enabled", "sources", "WHERE enabled"),
+                ("items", "items", ""),
+                ("entities", "entities", ""),
+                ("edges", "graph_edges", ""),
+                ("saved_queries", "saved_queries", ""),
+                ("alerts", "saved_queries", "WHERE alert_enabled"),
+            ]:
+                counts[key] = conn.execute(
+                    f"SELECT count(*) AS c FROM {table} {extra}".rstrip()
+                ).fetchone()["c"]
+            latest = conn.execute(
+                "SELECT collected_at FROM items ORDER BY collected_at DESC LIMIT 1"
+            ).fetchone()
+        counts["latest_item_at"] = latest["collected_at"] if latest else None
+        return counts
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="İstatistik okunamadı") from exc
+
+
+@app.get("/items/recent", dependencies=[Depends(require_viewer)])
+def recent_items(limit: int = 20) -> list[dict[str, Any]]:
+    """En son toplanan öğeler (panel akışı)."""
+    limit = max(1, min(int(limit), 50))
+    try:
+        with _db() as conn:
+            rows = conn.execute(
+                """
+                SELECT id::text AS id, title, url, language,
+                       LEFT(cleaned_content, 500) AS snippet,
+                       collected_at, tags
+                FROM items ORDER BY collected_at DESC LIMIT %s
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Öğeler okunamadı") from exc
 
 
 @app.post("/collect", dependencies=[Depends(require_analyst)])
@@ -403,6 +470,237 @@ def graph_add(req: GraphAddRequest) -> dict[str, str]:
     except Exception as exc:  # noqa: BLE001
         logger.debug("Graf persist atlandı: %s", exc)
     return {"status": "ok"}
+
+
+class SourceRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=500)
+    plugin_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
+    url: str = Field(default="", max_length=2048)
+    network_type: str = Field(default="www", max_length=32)
+    schedule: str = Field(default="", max_length=100)
+    priority: int = Field(default=5, ge=1, le=10)
+    enabled: bool = True
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    config: dict[str, Any] = Field(default_factory=dict, max_length=50)
+
+
+_VALID_NETWORKS = {"www", "tor", "i2p", "p2p", "freenet", "zeronet", "irc",
+                   "matrix", "rss", "api", "blockchain", "sdr", "custom"}
+
+
+@app.get("/sources", dependencies=[Depends(require_viewer)])
+def list_sources() -> list[dict[str, Any]]:
+    try:
+        with _db() as conn:
+            rows = conn.execute(
+                """
+                SELECT id::text AS id, name, url, network_type::text AS network_type,
+                       plugin_id, schedule, priority, enabled, tags,
+                       last_crawled_at, last_success_at, failure_count, avg_response_ms
+                FROM sources ORDER BY name LIMIT 500
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Kaynaklar okunamadı") from exc
+
+
+@app.post("/sources", dependencies=[Depends(require_analyst)])
+def create_source(req: SourceRequest) -> dict[str, str]:
+    if req.network_type not in _VALID_NETWORKS:
+        raise HTTPException(status_code=400, detail="Geçersiz network_type")
+    if req.plugin_id not in get_collector().plugins:
+        raise HTTPException(status_code=404, detail="Plugin bulunamadı")
+    try:
+        with _db() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO sources
+                    (name, url, network_type, plugin_id, schedule, priority,
+                     enabled, tags, metadata)
+                VALUES (%s, NULLIF(%s,''), %s::network_type, %s,
+                        NULLIF(%s,''), %s, %s, %s, %s::jsonb)
+                RETURNING id::text AS id
+                """,
+                (req.name, req.url, req.network_type, req.plugin_id,
+                 req.schedule, req.priority, req.enabled,
+                 [str(t)[:100] for t in req.tags[:20]],
+                 json.dumps({"config": req.config}, ensure_ascii=False)),
+            ).fetchone()
+            conn.commit()
+        _audit("source.create", req.name, {"plugin": req.plugin_id})
+        return {"id": row["id"]}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Kaynak oluşturulamadı") from exc
+
+
+@app.delete("/sources/{source_id}", dependencies=[Depends(require_analyst)])
+def delete_source(source_id: str) -> dict[str, str]:
+    try:
+        with _db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM sources WHERE id::text = %s", (source_id,))
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
+            conn.commit()
+        _audit("source.delete", None, {"id": source_id})
+        return {"status": "deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Kaynak silinemedi") from exc
+
+
+@app.post("/sources/{source_id}/collect", dependencies=[Depends(require_analyst)])
+def collect_source(source_id: str) -> dict[str, Any]:
+    """Kayıtlı kaynağı tek seferlik çalıştırır (sağlık takibi dahil)."""
+    try:
+        with _db() as conn:
+            row = conn.execute(
+                """
+                SELECT plugin_id, url, metadata FROM sources WHERE id::text = %s
+                """,
+                (source_id,),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
+        row = dict(row)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Kaynak okunamadı") from exc
+    meta = row.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except ValueError:
+            meta = {}
+    task_config: dict[str, Any] = dict(meta.get("config") or {})
+    task_config["source_id"] = source_id
+    if row.get("url"):
+        for key in ("url", "feed_url", "endpoint"):
+            task_config.setdefault(key, row["url"])
+    collector = get_collector()
+    if row["plugin_id"] not in collector.plugins:
+        raise HTTPException(status_code=404, detail="Plugin bulunamadı")
+    try:
+        result = collector.run_collection(row["plugin_id"], task_config)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if not result.success:
+        raise HTTPException(status_code=502, detail=result.error)
+    _audit("source.collect", row["plugin_id"], {"id": source_id, "items": len(result.items)})
+    return {"items": len(result.items), "metadata": result.metadata}
+
+
+class SavedQueryRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    query_text: str = Field(min_length=1, max_length=500)
+    query_type: str = Field(default="fts", max_length=32)
+    alert_enabled: bool = False
+
+
+_VALID_QUERY_TYPES = {"fts", "semantic", "regex", "entity", "graph"}
+
+
+@app.get("/saved-queries", dependencies=[Depends(require_viewer)])
+def list_saved_queries() -> list[dict[str, Any]]:
+    try:
+        with _db() as conn:
+            rows = conn.execute(
+                """
+                SELECT id::text AS id, name, query_text,
+                       query_type::text AS query_type, alert_enabled, last_triggered_at
+                FROM saved_queries ORDER BY name LIMIT 500
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Sorgular okunamadı") from exc
+
+
+@app.post("/saved-queries", dependencies=[Depends(require_analyst)])
+def create_saved_query(req: SavedQueryRequest) -> dict[str, str]:
+    if req.query_type not in _VALID_QUERY_TYPES:
+        raise HTTPException(status_code=400, detail="Geçersiz query_type")
+    try:
+        with _db() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO saved_queries (name, query_text, query_type, alert_enabled)
+                VALUES (%s, %s, %s::query_type, %s)
+                RETURNING id::text AS id
+                """,
+                (req.name, req.query_text, req.query_type, req.alert_enabled),
+            ).fetchone()
+            conn.commit()
+        return {"id": row["id"]}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Sorgu oluşturulamadı") from exc
+
+
+@app.delete("/saved-queries/{query_id}", dependencies=[Depends(require_analyst)])
+def delete_saved_query(query_id: str) -> dict[str, str]:
+    try:
+        with _db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM saved_queries WHERE id::text = %s", (query_id,))
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Sorgu bulunamadı")
+            conn.commit()
+        return {"status": "deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Sorgu silinemedi") from exc
+
+
+class AlertTestRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50_000)
+    title: str = Field(default="", max_length=2000)
+
+
+@app.post("/alerts/test", dependencies=[Depends(require_analyst)])
+def test_alerts(req: AlertTestRequest) -> list[dict[str, Any]]:
+    """Ham metni kayıtlı uyarı sorgularıyla eşleştirir (kayıt oluşturmaz)."""
+    from osiris_alert.manager import AlertManager
+
+    try:
+        with _db() as conn:
+            queries = conn.execute(
+                """
+                SELECT id::text AS id, name, query_text, alert_enabled
+                FROM saved_queries WHERE alert_enabled LIMIT 100
+                """
+            ).fetchall()
+        manager = AlertManager(redis_url=None)
+        return manager.check_item(
+            {"cleaned_content": req.text, "title": req.title},
+            [dict(q) for q in queries],
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Eşleşme başarısız") from exc
+
+
+class MarkdownReportRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    scope: str = Field(default="", max_length=1000)
+    summary: str = Field(default="", max_length=20_000)
+    findings: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
+    sources: list[str] = Field(default_factory=list, max_length=500)
+
+
+@app.post("/reports/markdown", dependencies=[Depends(require_analyst)])
+def report_markdown(req: MarkdownReportRequest) -> dict[str, str]:
+    """Markdown rapor üretir (gövdeyle döner, diske yazmaz)."""
+    from osiris_report.generator import ReportGenerator
+
+    try:
+        content = ReportGenerator().generate_markdown(
+            req.title, req.scope, req.summary, req.findings, req.sources)
+        return {"markdown": content}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Rapor üretilemedi") from exc
 
 
 def run() -> None:

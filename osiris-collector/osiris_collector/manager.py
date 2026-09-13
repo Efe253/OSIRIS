@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_QUEUE_ITEM_BYTES = 512_000
 _CRON_PART_RE = re.compile(r"^[\d,/*-]+$")
+_PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
 
 class CollectorManager:
@@ -195,6 +196,29 @@ class CollectorManager:
                 conn.commit()
         except Exception as exc:  # noqa: BLE001
             logger.debug("Sağlık kaydı yazılamadı: %s", exc)
+
+    def get_manifest(self, plugin_id: str) -> dict[str, Any]:
+        """Yüklü bir plugin'in manifestini döner (dinamik formlar için)."""
+        if plugin_id not in self.plugins:
+            raise KeyError(f"Plugin bulunamadı: {plugin_id}")
+        if not _PLUGIN_ID_RE.match(plugin_id):
+            raise ValueError("Geçersiz plugin id")
+        manifest_path = self.plugins_dir / plugin_id / "manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"Manifest okunamadı: {exc}") from exc
+        if not isinstance(manifest, dict):
+            raise ValueError("Manifest geçersiz")
+        return {
+            "id": manifest.get("id", plugin_id),
+            "name": manifest.get("name", plugin_id),
+            "network_type": manifest.get("network_type", "custom"),
+            "description": str(manifest.get("description", ""))[:1000],
+            "config_schema": manifest.get("config_schema", {})
+            if isinstance(manifest.get("config_schema"), dict) else {},
+            "schedule_default": str(manifest.get("schedule_default", ""))[:100],
+        }
 
     def schedule(self, plugin_id: str, cron: str, config: dict[str, Any]) -> None:
         """Bir plugin için cron tabanlı zamanlama ekler (5 alanlı cron)."""

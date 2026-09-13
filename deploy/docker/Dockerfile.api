@@ -13,6 +13,8 @@ COPY osiris-sdk ./osiris-sdk
 COPY osiris-collector ./osiris-collector
 COPY osiris-graph ./osiris-graph
 COPY osiris-query ./osiris-query
+COPY osiris-alert ./osiris-alert
+COPY osiris-report ./osiris-report
 COPY osiris-api ./osiris-api
 COPY plugins ./plugins
 
@@ -21,6 +23,8 @@ RUN pip install --no-cache-dir \
     ./osiris-collector \
     ./osiris-graph \
     ./osiris-query \
+    ./osiris-alert \
+    ./osiris-report \
     ./osiris-api \
  && for req in plugins/*/requirements.txt; do \
         pip install --no-cache-dir -r "$req"; \

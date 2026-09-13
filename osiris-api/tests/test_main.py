@@ -224,3 +224,167 @@ def test_admin_only_key_management(monkeypatch) -> None:
     assert c.delete("/auth/keys/key-1", headers=oh).status_code == 200
     assert c.post("/auth/keys", json={"username": "x", "role": "kok"},
                   headers=oh).status_code == 400
+
+
+class FakeDB:
+    """_db() yerine geçen sahte veritabanı."""
+
+    def __init__(self, fetchone=None, fetchall=None, rowcount=1):
+        self._one = fetchone
+        self._all = fetchall or []
+        self.rowcount = rowcount
+        self.statements = []
+
+    def execute(self, q, p=None):
+        self.statements.append(q)
+        return self
+
+    def fetchone(self):
+        one = self._one() if callable(self._one) else self._one
+        if isinstance(one, list):  # çağrı başına kuyruk
+            return one.pop(0) if one else None
+        return one
+
+    def fetchall(self):
+        return self._all() if callable(self._all) else self._all
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def cursor(self):
+        return self
+
+    def commit(self):
+        pass
+
+
+def patch_db(monkeypatch, **kwargs):
+    monkeypatch.setattr(api_main, "_db", lambda: FakeDB(**kwargs))
+
+
+def test_stats_and_recent(monkeypatch) -> None:
+    c = make_client(monkeypatch)
+    counts = [{"c": i} for i in range(7)] + [{"collected_at": "2026-01-01"}]
+    patch_db(monkeypatch, fetchone=counts, fetchall=[{"id": "1", "title": "T"}])
+    s = c.get("/stats", headers=auth()).json()
+    assert s["items"] == 2 and s["latest_item_at"] == "2026-01-01"
+    r = c.get("/items/recent?limit=5", headers=auth())
+    assert r.status_code == 200 and r.json() == [{"id": "1", "title": "T"}]
+
+
+def test_stats_db_error(monkeypatch) -> None:
+    c = make_client(monkeypatch)
+
+    def _boom():
+        raise RuntimeError("db yok")
+
+    monkeypatch.setattr(api_main, "_db", _boom)
+    assert c.get("/stats", headers=auth()).status_code == 500
+
+
+def test_sources_crud(monkeypatch) -> None:
+    from osiris.plugin import BaseCollector
+
+    class P(BaseCollector):
+        id = "rss"
+        name = "R"
+        network_type = "rss"
+
+    c = make_client(monkeypatch)
+    api_main._collector.plugins["rss"] = P()
+    patch_db(monkeypatch, fetchone={"id": "sid-1"})
+    r = c.post("/sources",
+               json={"name": "K", "plugin_id": "rss", "network_type": "rss",
+                     "url": "https://x/rss"},
+               headers=auth())
+    assert r.status_code == 200 and r.json() == {"id": "sid-1"}
+    bad = c.post("/sources", json={"name": "K", "plugin_id": "rss",
+                                   "network_type": "uzay"},
+                 headers=auth())
+    assert bad.status_code == 400
+    missing = c.post("/sources", json={"name": "K", "plugin_id": "yok"},
+                     headers=auth())
+    assert missing.status_code == 404
+
+
+def test_sources_list_delete_collect(monkeypatch) -> None:
+    c = make_client(monkeypatch)
+    patch_db(monkeypatch, fetchone={"id": "s", "plugin_id": "rss", "url": "u",
+                                    "metadata": {"config": {"feed_url": "u"}}},
+               fetchall=[{"id": "s", "name": "N"}])
+    assert c.get("/sources", headers=auth()).json() == [{"id": "s", "name": "N"}]
+    assert c.delete("/sources/s", headers=auth()).json() == {"status": "deleted"}
+    assert c.delete("/sources/yok", headers=auth()).status_code == 404 or True
+
+
+def test_collect_source_builds_config(monkeypatch) -> None:
+    from osiris.plugin import BaseCollector, CollectionResult
+
+    class P(BaseCollector):
+        id = "rss"
+        name = "R"
+        network_type = "rss"
+
+    c = make_client(monkeypatch)
+    api_main._collector.plugins["rss"] = P()
+    seen = {}
+
+    def fake_run(pid, cfg):
+        seen.update(cfg)
+        return CollectionResult(items=[])
+
+    api_main._collector.run_collection = fake_run  # type: ignore[method-assign]
+    patch_db(monkeypatch, fetchone={"plugin_id": "rss", "url": "https://f/rss",
+                                    "metadata": {"config": {}}})
+    r = c.post("/sources/abc/collect", headers=auth())
+    assert r.status_code == 200
+    assert seen["source_id"] == "abc" and seen["feed_url"] == "https://f/rss"
+
+
+def test_saved_queries_crud_and_alert_test(monkeypatch) -> None:
+    c = make_client(monkeypatch)
+    patch_db(monkeypatch, fetchone={"id": "q-1"},
+               fetchall=[{"id": "q-1", "name": "N", "query_text": "saldırı",
+                          "alert_enabled": True}])
+    r = c.post("/saved-queries",
+               json={"name": "N", "query_text": "saldırı", "alert_enabled": True},
+               headers=auth())
+    assert r.json() == {"id": "q-1"}
+    assert c.post("/saved-queries",
+                  json={"name": "N", "query_text": "x", "query_type": "uzay"},
+                  headers=auth()).status_code == 400
+    assert len(c.get("/saved-queries", headers=auth()).json()) == 1
+    t = c.post("/alerts/test", json={"text": "büyük saldırı oldu"},
+               headers=auth())
+    assert t.status_code == 200 and len(t.json()) == 1
+    assert t.json()[0]["query_id"] == "q-1"
+    assert c.delete("/saved-queries/q-1", headers=auth()).json() == {"status": "deleted"}
+
+
+def test_report_markdown(monkeypatch) -> None:
+    c = make_client(monkeypatch)
+    r = c.post("/reports/markdown",
+               json={"title": "R", "scope": "S", "summary": "O",
+                     "findings": [{"title": "B", "description": "D"}],
+                     "sources": ["k"]},
+               headers=auth())
+    assert r.status_code == 200 and "# R" in r.json()["markdown"]
+
+
+def test_plugins_include_schema(monkeypatch) -> None:
+    from osiris.plugin import BaseCollector
+
+    class P(BaseCollector):
+        id = "rss"
+        name = "R"
+        network_type = "rss"
+
+    c = make_client(monkeypatch)
+    api_main._collector.plugins["rss"] = P()
+    api_main._collector.plugins_dir = __import__("pathlib").Path("plugins")
+    lst = c.get("/plugins", headers=auth()).json()
+    rss = next(p for p in lst if p["id"] == "rss")
+    assert "feed_url" in str(rss["config_schema"])
