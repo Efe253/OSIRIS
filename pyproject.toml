@@ -9,9 +9,12 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = [
     "osiris-sdk/tests",
+    "osiris-collector/tests",
     "osiris-pipeline/tests",
     "osiris-graph/tests",
     "osiris-alert/tests",
     "osiris-report/tests",
+    "osiris-query/tests",
     "osiris-api/tests",
+    "osiris-cli/tests",
 ]

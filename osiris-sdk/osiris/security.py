@@ -135,6 +135,8 @@ def sanitize_domain(domain: str) -> str:
     for label in labels:
         if not label or len(label) > 63:
             raise ValueError("Domain etiketi geçersiz")
+        if label.startswith("-") or label.endswith("-"):
+            raise ValueError("Domain etiketi tire ile başlayamaz/bitmez")
         if not all(c.isalnum() or c == "-" for c in label):
             raise ValueError("Domain etiketi geçersiz karakter içeriyor")
     return d

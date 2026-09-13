@@ -25,3 +25,50 @@ def test_extract_entities_email_ip_domain(pipeline: ProcessingPipeline) -> None:
     assert "email" in types
     assert "ip" in types
     assert "domain" in types
+
+
+def test_process_one_bad_payloads() -> None:
+    import pytest
+    from osiris_pipeline.pipeline import ProcessingPipeline
+
+    p = ProcessingPipeline.__new__(ProcessingPipeline)
+    p._nlp = False
+    for bad in ["bozuk", "[1,2]", '{"item": {}}', '{"plugin_id": "x"}']:
+        with pytest.raises(ValueError):
+            p.process_one(bad)
+
+
+def test_run_handles_bad_and_store_errors() -> None:
+    from unittest.mock import MagicMock
+
+    from osiris_pipeline.pipeline import ProcessingPipeline
+
+    p = ProcessingPipeline.__new__(ProcessingPipeline)
+    p._nlp = False
+    p.queue_name = "q"
+    p.embedding_model_name = None
+    p._embedder = None
+    p.redis = MagicMock()
+    p.redis.lpop.side_effect = [
+        '{"bozuk": ',
+        '{"plugin_id":"t","item":{"raw_content":"selam"}}',
+        '{"plugin_id":"t","item":{"raw_content":"merhaba"}}',
+        None,
+    ]
+    p.store = MagicMock(side_effect=[RuntimeError("db"), None])  # type: ignore[method-assign]
+    assert p.run(batch_size=10) == 1
+    p.redis.lpop.side_effect = Exception("redis down")
+    p.redis.lpop.side_effect = __import__("redis").RedisError("down")
+    assert p.run() == 0
+
+
+def test_nlp_fallback_without_spacy(monkeypatch) -> None:
+    import sys
+
+    from osiris_pipeline.pipeline import ProcessingPipeline
+
+    monkeypatch.setitem(sys.modules, "spacy", None)
+    p = ProcessingPipeline.__new__(ProcessingPipeline)
+    p._nlp = None
+    assert p.nlp is None
+    assert any(e["type"] == "email" for e in p.extract_entities("a@b.co"))

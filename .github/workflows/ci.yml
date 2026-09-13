@@ -24,9 +24,15 @@ jobs:
           pip install -e ./osiris-report
           pip install -e ./osiris-query
           pip install -e ./osiris-api
-          pip install pytest
-      - name: Testleri çalıştır
-        run: pytest -q
+          pip install -e ./osiris-cli
+          pip install pytest pytest-cov httpx
+      - name: Testleri çalıştır (%80 kapsam eşiği)
+        run: |
+          pytest -q \
+            --cov=osiris --cov=osiris_collector --cov=osiris_pipeline \
+            --cov=osiris_graph --cov=osiris_alert --cov=osiris_report \
+            --cov=osiris_query --cov=osiris_api --cov=osiris_cli \
+            --cov-report=term-missing --cov-fail-under=80
 
   lint:
     name: Lint (ruff)

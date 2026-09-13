@@ -33,7 +33,9 @@ class QueryEngine:
             n = int(limit)
         except (TypeError, ValueError) as exc:
             raise ValueError("limit tamsayı olmalı") from exc
-        return max(1, min(n, 100))
+        if n < 1:
+            raise ValueError("limit en az 1 olmalı")
+        return min(n, 100)
 
     @staticmethod
     def _validate_query(query: str) -> str:

@@ -42,13 +42,26 @@ def collect(plugin_id: str, config: str) -> None:
 
     from osiris_collector.manager import CollectorManager
 
+    try:
+        cfg = json.loads(config)
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Geçersiz JSON config:[/red] {exc}")
+        raise SystemExit(2) from exc
+    if not isinstance(cfg, dict):
+        console.print("[red]config bir JSON objesi olmalı[/red]")
+        raise SystemExit(2)
     manager = CollectorManager()
     manager.load_plugins()
-    result = manager.run_collection(plugin_id, json.loads(config))
+    try:
+        result = manager.run_collection(plugin_id, cfg)
+    except KeyError:
+        console.print(f"[red]Plugin bulunamadı:[/red] {plugin_id}")
+        raise SystemExit(1) from None
     if result.success:
         console.print(f"[green]{len(result.items)}[/green] öğe toplandı")
     else:
         console.print(f"[red]Hata:[/red] {result.error}")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
