@@ -1,0 +1,363 @@
+{
+  "_meta": {
+    "format": "maigret-subset-v1",
+    "note": "Maigret data.json uyumlu alt küme. Tam DB için https://github.com/soxoj/maigret reposundaki db/data.json dosyasını sites_db olarak verin."
+  },
+  "GitHub": {
+    "urlMain": "https://github.com/",
+    "url": "https://github.com/{username}",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "GitLab": {
+    "urlMain": "https://gitlab.com/",
+    "url": "https://gitlab.com/{username}",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "Reddit": {
+    "urlMain": "https://www.reddit.com/",
+    "url": "https://old.reddit.com/user/{username}/",
+    "checkType": "status_code",
+    "tags": ["social", "forum"]
+  },
+  "HackerNews": {
+    "urlMain": "https://news.ycombinator.com/",
+    "url": "https://news.ycombinator.com/user?id={username}",
+    "checkType": "message",
+    "absenceStrs": ["No such user"],
+    "tags": ["forum", "dev"]
+  },
+  "DevTo": {
+    "urlMain": "https://dev.to/",
+    "url": "https://dev.to/{username}",
+    "checkType": "status_code",
+    "tags": ["dev", "blog"]
+  },
+  "Medium": {
+    "urlMain": "https://medium.com/",
+    "url": "https://medium.com/@{username}",
+    "checkType": "status_code",
+    "tags": ["blog"]
+  },
+  "Pinterest": {
+    "urlMain": "https://www.pinterest.com/",
+    "url": "https://www.pinterest.com/{username}/",
+    "checkType": "status_code",
+    "tags": ["photo", "social"]
+  },
+  "Twitch": {
+    "urlMain": "https://www.twitch.tv/",
+    "url": "https://www.twitch.tv/{username}",
+    "checkType": "status_code",
+    "tags": ["video", "gaming"]
+  },
+  "YouTube": {
+    "urlMain": "https://www.youtube.com/",
+    "url": "https://www.youtube.com/@{username}",
+    "checkType": "status_code",
+    "tags": ["video"]
+  },
+  "TikTok": {
+    "urlMain": "https://www.tiktok.com/",
+    "url": "https://www.tiktok.com/@{username}",
+    "checkType": "message",
+    "absenceStrs": ["Couldn't find this account"],
+    "tags": ["video", "social"]
+  },
+  "Instagram": {
+    "urlMain": "https://www.instagram.com/",
+    "url": "https://www.instagram.com/{username}/",
+    "checkType": "message",
+    "absenceStrs": ["Sorry, this page isn't available"],
+    "tags": ["photo", "social"]
+  },
+  "SoundCloud": {
+    "urlMain": "https://soundcloud.com/",
+    "url": "https://soundcloud.com/{username}",
+    "checkType": "status_code",
+    "tags": ["music"]
+  },
+  "LastFm": {
+    "urlMain": "https://www.last.fm/",
+    "url": "https://www.last.fm/user/{username}",
+    "checkType": "status_code",
+    "tags": ["music"]
+  },
+  "DeviantArt": {
+    "urlMain": "https://www.deviantart.com/",
+    "url": "https://www.deviantart.com/{username}",
+    "checkType": "status_code",
+    "tags": ["photo"]
+  },
+  "Dribbble": {
+    "urlMain": "https://dribbble.com/",
+    "url": "https://dribbble.com/{username}",
+    "checkType": "status_code",
+    "tags": ["photo", "dev"]
+  },
+  "Behance": {
+    "urlMain": "https://www.behance.net/",
+    "url": "https://www.behance.net/{username}",
+    "checkType": "status_code",
+    "tags": ["photo"]
+  },
+  "ArtStation": {
+    "urlMain": "https://www.artstation.com/",
+    "url": "https://www.artstation.com/{username}",
+    "checkType": "status_code",
+    "tags": ["photo", "gaming"]
+  },
+  "Flickr": {
+    "urlMain": "https://www.flickr.com/",
+    "url": "https://www.flickr.com/people/{username}/",
+    "checkType": "status_code",
+    "tags": ["photo"]
+  },
+  "500px": {
+    "urlMain": "https://500px.com/",
+    "url": "https://500px.com/{username}",
+    "checkType": "status_code",
+    "tags": ["photo"]
+  },
+  "Vimeo": {
+    "urlMain": "https://vimeo.com/",
+    "url": "https://vimeo.com/{username}",
+    "checkType": "status_code",
+    "tags": ["video"]
+  },
+  "Dailymotion": {
+    "urlMain": "https://www.dailymotion.com/",
+    "url": "https://www.dailymotion.com/{username}",
+    "checkType": "status_code",
+    "tags": ["video"]
+  },
+  "Tumblr": {
+    "urlMain": "https://www.tumblr.com/",
+    "url": "https://www.tumblr.com/{username}",
+    "checkType": "status_code",
+    "tags": ["blog", "social"]
+  },
+  "Blogger": {
+    "urlMain": "https://www.blogger.com/",
+    "url": "https://www.blogger.com/profile/{username}",
+    "checkType": "status_code",
+    "tags": ["blog"]
+  },
+  "WordPress": {
+    "urlMain": "https://wordpress.com/",
+    "url": "https://{username}.wordpress.com/",
+    "checkType": "status_code",
+    "tags": ["blog"]
+  },
+  "Ghost": {
+    "urlMain": "https://ghost.org/",
+    "url": "https://{username}.ghost.io/",
+    "checkType": "status_code",
+    "tags": ["blog"]
+  },
+  "Substack": {
+    "urlMain": "https://substack.com/",
+    "url": "https://{username}.substack.com/",
+    "checkType": "status_code",
+    "tags": ["blog"]
+  },
+  "Wattpad": {
+    "urlMain": "https://www.wattpad.com/",
+    "url": "https://www.wattpad.com/user/{username}",
+    "checkType": "status_code",
+    "tags": ["blog", "social"]
+  },
+  "GoodreadsAuthor": {
+    "urlMain": "https://www.goodreads.com/",
+    "url": "https://www.goodreads.com/author/show/{username}",
+    "checkType": "status_code",
+    "tags": ["blog"]
+  },
+  "Letterboxd": {
+    "urlMain": "https://letterboxd.com/",
+    "url": "https://letterboxd.com/{username}/",
+    "checkType": "status_code",
+    "tags": ["social"]
+  },
+  "MyAnimeList": {
+    "urlMain": "https://myanimelist.net/",
+    "url": "https://myanimelist.net/profile/{username}",
+    "checkType": "status_code",
+    "tags": ["gaming", "social"]
+  },
+  "AniList": {
+    "urlMain": "https://anilist.co/",
+    "url": "https://anilist.co/user/{username}/",
+    "checkType": "status_code",
+    "tags": ["gaming", "social"]
+  },
+  "ChessCom": {
+    "urlMain": "https://www.chess.com/",
+    "url": "https://www.chess.com/member/{username}",
+    "checkType": "status_code",
+    "tags": ["gaming"]
+  },
+  "Lichess": {
+    "urlMain": "https://lichess.org/",
+    "url": "https://lichess.org/@/{username}",
+    "checkType": "status_code",
+    "tags": ["gaming"]
+  },
+  "Codeforces": {
+    "urlMain": "https://codeforces.com/",
+    "url": "https://codeforces.com/profile/{username}",
+    "checkType": "status_code",
+    "tags": ["dev", "gaming"]
+  },
+  "LeetCode": {
+    "urlMain": "https://leetcode.com/",
+    "url": "https://leetcode.com/u/{username}/",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "CodeChef": {
+    "urlMain": "https://www.codechef.com/",
+    "url": "https://www.codechef.com/users/{username}",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "Kaggle": {
+    "urlMain": "https://www.kaggle.com/",
+    "url": "https://www.kaggle.com/{username}",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "HuggingFace": {
+    "urlMain": "https://huggingface.co/",
+    "url": "https://huggingface.co/{username}",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "Replit": {
+    "urlMain": "https://replit.com/",
+    "url": "https://replit.com/@{username}",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "Codepen": {
+    "urlMain": "https://codepen.io/",
+    "url": "https://codepen.io/{username}",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "NPM": {
+    "urlMain": "https://www.npmjs.com/",
+    "url": "https://www.npmjs.com/~{username}",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "PyPI": {
+    "urlMain": "https://pypi.org/",
+    "url": "https://pypi.org/user/{username}/",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "RubyGems": {
+    "urlMain": "https://rubygems.org/",
+    "url": "https://rubygems.org/profiles/{username}",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "DockerHub": {
+    "urlMain": "https://hub.docker.com/",
+    "url": "https://hub.docker.com/u/{username}/",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "Keybase": {
+    "urlMain": "https://keybase.io/",
+    "url": "https://keybase.io/{username}",
+    "checkType": "status_code",
+    "tags": ["social", "dev"]
+  },
+  "Bluesky": {
+    "urlMain": "https://bsky.app/",
+    "url": "https://bsky.app/profile/{username}",
+    "checkType": "status_code",
+    "tags": ["social"]
+  },
+  "VK": {
+    "urlMain": "https://vk.com/",
+    "url": "https://vk.com/{username}",
+    "checkType": "status_code",
+    "tags": ["social"]
+  },
+  "ProductHunt": {
+    "urlMain": "https://www.producthunt.com/",
+    "url": "https://www.producthunt.com/@{username}",
+    "checkType": "status_code",
+    "tags": ["dev", "social"]
+  },
+  "IndieHackers": {
+    "urlMain": "https://www.indiehackers.com/",
+    "url": "https://www.indiehackers.com/{username}",
+    "checkType": "status_code",
+    "tags": ["dev", "forum"]
+  },
+  "HackerOne": {
+    "urlMain": "https://hackerone.com/",
+    "url": "https://hackerone.com/{username}",
+    "checkType": "status_code",
+    "tags": ["dev"]
+  },
+  "TryHackMe": {
+    "urlMain": "https://tryhackme.com/",
+    "url": "https://tryhackme.com/p/{username}",
+    "checkType": "status_code",
+    "tags": ["dev", "gaming"]
+  },
+  "Patreon": {
+    "urlMain": "https://www.patreon.com/",
+    "url": "https://www.patreon.com/{username}",
+    "checkType": "status_code",
+    "tags": ["social"]
+  },
+  "Kofi": {
+    "urlMain": "https://ko-fi.com/",
+    "url": "https://ko-fi.com/{username}",
+    "checkType": "status_code",
+    "tags": ["social"]
+  },
+  "BuyMeACoffee": {
+    "urlMain": "https://www.buymeacoffee.com/",
+    "url": "https://www.buymeacoffee.com/{username}",
+    "checkType": "status_code",
+    "tags": ["social"]
+  },
+  "OpenStreetMap": {
+    "urlMain": "https://www.openstreetmap.org/",
+    "url": "https://www.openstreetmap.org/user/{username}",
+    "checkType": "status_code",
+    "tags": ["social"]
+  },
+  "Fandom": {
+    "urlMain": "https://www.fandom.com/",
+    "url": "https://www.fandom.com/u/{username}",
+    "checkType": "status_code",
+    "tags": ["gaming", "social"]
+  },
+  "ArchiveOfOurOwn": {
+    "urlMain": "https://archiveofourown.org/",
+    "url": "https://archiveofourown.org/users/{username}",
+    "checkType": "status_code",
+    "tags": ["blog", "social"]
+  },
+  "Spotify": {
+    "urlMain": "https://open.spotify.com/",
+    "url": "https://open.spotify.com/user/{username}",
+    "checkType": "status_code",
+    "tags": ["music"]
+  },
+  "Bandcamp": {
+    "urlMain": "https://bandcamp.com/",
+    "url": "https://bandcamp.com/{username}",
+    "checkType": "status_code",
+    "tags": ["music"]
+  }
+}

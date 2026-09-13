@@ -1,0 +1,20 @@
+{
+  "id": "username-search",
+  "name": "Username Search",
+  "version": "1.0.0",
+  "network_type": "www",
+  "author": "OSIRIS Team",
+  "description": "Maigret tarzı kullanıcı adı taraması: profil URL'lerini yüzlerce sitede yoklar (status/message/redirect tespiti)",
+  "config_schema": {
+    "username": {"type": "string", "required": true, "description": "Aranacak kullanıcı adı"},
+    "sites": {"type": "array", "description": "Yalnızca bu siteler (boşsa tümü)"},
+    "tags": {"type": "array", "description": "Yalnızca bu kategoriler: dev, social, photo, video, music, gaming, forum, blog"},
+    "max_sites": {"type": "integer", "default": 200},
+    "workers": {"type": "integer", "default": 10},
+    "timeout": {"type": "integer", "default": 15},
+    "sites_db": {"type": "string", "description": "Özel site DB yolu (Maigret data.json uyumlu)"}
+  },
+  "capabilities": ["username", "profile", "social"],
+  "requires_proxy": false,
+  "schedule_default": ""
+}

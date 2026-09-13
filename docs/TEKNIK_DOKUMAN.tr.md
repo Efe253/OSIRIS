@@ -113,7 +113,7 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 │    └──────┬──────┘  └───────────────┘  └─────────────────┘    │
 │           │                                                      │
 │    ┌──────▼──────────────────────────────────────────────┐      │
-│    │              Plugin Koleksiyonu (10 plugin)          │      │
+│    │              Plugin Koleksiyonu (11 plugin)          │      │
 │    │  [WWW] [Tor] [I2P] [RSS] [API] [P2P] [Shodan] ...  │      │
 │    └─────────────────────────────────────────────────────┘      │
 │                                                                  │
@@ -249,7 +249,7 @@ Auth: `X-API-Key` (operatör) veya kullanıcı DB anahtarları veya `Authorizati
 
 ## 6. Desteklenen Ağ ve Protokoller
 
-Gerçekleşen collector'lar (10): **web-scraper** (WWW), **tor** (localhost SOCKS5 ile `.onion`), **i2p** (localhost HTTP proxy ile eepsite), **rss** (sınırlı RSS/Atom), **rest-api** (metot allowlist, JSON-path), **irc** (enjeksiyon-arındırılmış, PING-duyarlı, süre kutulu), **matrix** (oda geçmişi, URL-kodlu ID), **dns-whois** (doğrulanmış domain, allowlist kayıt türleri, sınırlı WHOIS), **shodan** (anahtar asla loglanmaz), **blockchain** (EVM `eth_blockNumber`/bakiye/txcount, allowlist Blockstream ile Bitcoin).
+Gerçekleşen collector'lar (11): **web-scraper** (WWW), **tor** (localhost SOCKS5 ile `.onion`), **i2p** (localhost HTTP proxy ile eepsite), **rss** (sınırlı RSS/Atom), **rest-api** (metot allowlist, JSON-path), **irc** (enjeksiyon-arındırılmış, PING-duyarlı, süre kutulu), **matrix** (oda geçmişi, URL-kodlu ID), **dns-whois** (doğrulanmış domain, allowlist kayıt türleri, sınırlı WHOIS), **shodan** (anahtar asla loglanmaz), **blockchain** (EVM `eth_blockNumber`/bakiye/txcount, allowlist Blockstream ile Bitcoin), **username-search** (60+ gömülü sitede Maigret tarzı kullanıcı izi; binlercesi için Maigret `data.json` takılabilir).
 
 Planlı: Freenet/ZeroNet/RetroShare, BitTorrent/IPFS, XMPP/Nostr/Fediverse, BGP/sertifika şeffaflığı, SDR/ADS-B/AIS, Monero sınır dokümantasyonu.
 

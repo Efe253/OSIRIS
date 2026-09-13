@@ -113,7 +113,7 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 │    └──────┬──────┘  └───────────────┘  └─────────────────┘    │
 │           │                                                      │
 │    ┌──────▼──────────────────────────────────────────────┐      │
-│    │              Plugin Collection (10 plugins)          │      │
+│    │              Plugin Collection (11 plugins)          │      │
 │    │  [WWW] [Tor] [I2P] [RSS] [API] [P2P] [Shodan] ...  │      │
 │    └─────────────────────────────────────────────────────┘      │
 │                                                                  │
@@ -254,7 +254,7 @@ Auth: `X-API-Key` (operator) or per-user DB keys or `Authorization: Bearer <JWT>
 
 ## 6. Supported Networks and Protocols
 
-Implemented collectors (10): **web-scraper** (WWW), **tor** (`.onion` via localhost SOCKS5), **i2p** (eepsites via localhost HTTP proxy), **rss** (RSS/Atom, capped), **rest-api** (method allowlist, JSON-path dig), **irc** (injection-sanitized, PING-aware, time-boxed), **matrix** (room history, URL-encoded IDs), **dns-whois** (validated domains, allowlisted record types, bounded WHOIS), **shodan** (key never logged), **blockchain** (EVM `eth_blockNumber`/balance/txcount, Bitcoin via Blockstream allowlist).
+Implemented collectors (11): **web-scraper** (WWW), **tor** (`.onion` via localhost SOCKS5), **i2p** (eepsites via localhost HTTP proxy), **rss** (RSS/Atom, capped), **rest-api** (method allowlist, JSON-path dig), **irc** (injection-sanitized, PING-aware, time-boxed), **matrix** (room history, URL-encoded IDs), **dns-whois** (validated domains, allowlisted record types, bounded WHOIS), **shodan** (key never logged), **blockchain** (EVM `eth_blockNumber`/balance/txcount, Bitcoin via Blockstream allowlist), **username-search** (Maigret-style username footprint across 60+ bundled sites; drop-in Maigret `data.json` supported for thousands).
 
 Planned: Freenet/ZeroNet/RetroShare, BitTorrent/IPFS, XMPP/Nostr/Fediverse, BGP/cert-transparency, SDR/ADS-B/AIS, Monero limits documentation.
 
