@@ -34,8 +34,17 @@ def main() -> int:
         return 0
 
     if args.run:
-        config = json.loads(args.config) if args.config else {}
-        result = manager.run_collection(args.run, config)
+        try:
+            config = json.loads(args.config) if args.config else {}
+        except json.JSONDecodeError as exc:
+            parser.error(f"Geçersiz JSON config: {exc}")
+        if not isinstance(config, dict):
+            parser.error("config bir JSON objesi olmalı")
+        try:
+            result = manager.run_collection(args.run, config)
+        except KeyError:
+            print(f"Plugin bulunamadı: {args.run}", file=sys.stderr)
+            return 1
         print(json.dumps(result.metadata, ensure_ascii=False))
         return 0 if result.success else 1
 

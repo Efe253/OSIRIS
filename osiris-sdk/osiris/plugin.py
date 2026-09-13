@@ -7,20 +7,20 @@ Bkz. doküman §12.3.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CollectedItem(BaseModel):
     """Tek bir toplanan veri birimi."""
 
-    url: Optional[str] = None
-    title: Optional[str] = None
+    url: str | None = None
+    title: str | None = None
     raw_content: str
-    published_at: Optional[str] = None
-    metadata: dict[str, Any] = field(default_factory=dict)  # type: ignore[assignment]
-    tags: list[str] = field(default_factory=list)  # type: ignore[assignment]
+    published_at: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
 
 
 @dataclass
@@ -30,7 +30,7 @@ class CollectionResult:
     items: list[CollectedItem]
     metadata: dict[str, Any] = field(default_factory=dict)
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class BaseCollector:

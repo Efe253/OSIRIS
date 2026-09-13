@@ -8,6 +8,8 @@ import requests
 
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
 
+_HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
+
 
 class ShodanCollector(BaseCollector):
     id = "shodan"
@@ -18,30 +20,48 @@ class ShodanCollector(BaseCollector):
         cfg = config or self.config
         api_key = cfg.get("api_key")
         query = cfg.get("query")
-        if not api_key or not query:
+        if not api_key or not query or not isinstance(query, str):
             return CollectionResult(items=[], success=False, error="api_key ve query gerekli")
+        if len(query) > 500:
+            return CollectionResult(items=[], success=False, error="query çok uzun")
 
         try:
             resp = requests.get(
                 "https://api.shodan.io/shodan/host/search",
-                params={"key": api_key, "query": query},
+                params={"key": str(api_key), "query": query},
                 timeout=30,
+                headers=_HEADERS,
+                verify=True,
             )
             resp.raise_for_status()
         except requests.RequestException as exc:
-            return CollectionResult(items=[], success=False, error=str(exc))
+            # API anahtarını hataya yazma
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status == 401:
+                return CollectionResult(items=[], success=False, error="Shodan: yetkisiz (API anahtarı geçersiz)")
+            if status == 429:
+                return CollectionResult(items=[], success=False, error="Shodan: hız limiti aşıldı")
+            return CollectionResult(items=[], success=False, error=f"Shodan hatası: {type(exc).__name__}")
+
+        try:
+            payload = resp.json()
+        except ValueError:
+            return CollectionResult(items=[], success=False, error="Shodan: geçersiz yanıt")
 
         items = []
-        for match in resp.json().get("matches", []):
+        for match in payload.get("matches", [])[:100]:
+            if not isinstance(match, dict):
+                continue
             items.append(
                 CollectedItem(
-                    url=f"http://{match.get('ip_str')}:{match.get('port')}",
-                    title=match.get("product"),
-                    raw_content=str(match),
+                    url=f"http://{match.get('ip_str')}:{match.get('port')}"[:2048],
+                    title=str(match.get("product", ""))[:500] or None,
+                    raw_content=str(match)[:50_000],
                     metadata={"ip": match.get("ip_str"), "port": match.get("port")},
                 )
             )
-        return CollectionResult(items=items, metadata={"query": query})
+        # api_key'yi metadata'ya yazma!
+        return CollectionResult(items=items, metadata={"query": query, "count": len(items)})
 
     def health_check(self) -> bool:
         return bool(self.config.get("api_key"))

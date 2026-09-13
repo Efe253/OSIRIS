@@ -26,7 +26,7 @@ jobs:
           pip install -e ./osiris-api
           pip install pytest
       - name: Testleri çalıştır
-        run: pytest osiris-pipeline/tests osiris-graph/tests -q
+        run: pytest osiris-pipeline/tests osiris-graph/tests osiris-alert/tests -q
 
   lint:
     name: Lint (ruff)
@@ -39,7 +39,20 @@ jobs:
       - name: Ruff kur
         run: pip install ruff
       - name: Lint çalıştır
-        run: ruff check osiris-collector osiris-pipeline osiris-graph osiris-alert osiris-report osiris-query osiris-api osiris-cli
+        run: ruff check osiris-sdk osiris-collector osiris-pipeline osiris-graph osiris-alert osiris-report osiris-query osiris-api osiris-cli plugins
+
+  security-audit:
+    name: Güvenlik denetimi (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: pip-audit kur ve çalıştır
+        run: |
+          pip install pip-audit
+          pip-audit --desc --local --skip-editable || true
 
   web-ui-build:
     name: Web UI derleme
@@ -50,7 +63,8 @@ jobs:
         with:
           node-version: "20"
       - name: Bağımlılıkları kur
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
         working-directory: osiris-web-ui
       - name: Derle
         run: npm run build

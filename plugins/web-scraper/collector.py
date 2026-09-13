@@ -8,6 +8,10 @@ import requests
 from bs4 import BeautifulSoup
 
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
+from osiris.security import assert_safe_url, safe_title
+
+_HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted; contact: admin@localhost)"}
+_MAX_BYTES = 2_000_000
 
 
 class WebScraperCollector(BaseCollector):
@@ -18,42 +22,53 @@ class WebScraperCollector(BaseCollector):
     def collect(self, config: dict[str, Any] | None = None) -> CollectionResult:
         cfg = config or self.config
         url = cfg.get("url")
-        if not url:
+        if not url or not isinstance(url, str):
             return CollectionResult(items=[], success=False, error="url gerekli")
+        try:
+            assert_safe_url(url)
+        except ValueError as exc:
+            return CollectionResult(items=[], success=False, error=f"Güvensiz URL: {exc}")
 
         try:
-            resp = requests.get(url, timeout=30)
+            resp = requests.get(url, timeout=30, headers=_HEADERS, verify=True)
             resp.raise_for_status()
         except requests.RequestException as exc:
-            return CollectionResult(items=[], success=False, error=str(exc))
+            return CollectionResult(items=[], success=False, error=str(exc)[:500])
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+        text = resp.text[:_MAX_BYTES]
+        soup = BeautifulSoup(text, "html.parser")
         selector = cfg.get("css_selector")
-        if selector:
-            nodes = soup.select(selector)
-        else:
+        try:
+            nodes = soup.select(selector)[:20] if selector else [soup]
+        except Exception:  # noqa: BLE001
             nodes = [soup]
 
+        title = safe_title(soup)
         items = []
         for node in nodes:
-            text = node.get_text(" ", strip=True)
-            if not text:
+            node_text = node.get_text(" ", strip=True)[:50_000]
+            if not node_text:
                 continue
             items.append(
                 CollectedItem(
-                    url=url,
-                    title=soup.title.string.strip() if soup.title else None,
-                    raw_content=text,
+                    url=url[:2048],
+                    title=title,
+                    raw_content=node_text,
                     metadata={"depth": cfg.get("depth", 1)},
                 )
             )
+            if len(items) >= 20:
+                break
         return CollectionResult(items=items, metadata={"url": url})
 
     def health_check(self) -> bool:
         url = self.config.get("url")
-        if not url:
+        if not url or not isinstance(url, str):
             return False
         try:
-            return requests.head(url, timeout=10).status_code < 500
-        except requests.RequestException:
+            assert_safe_url(url)
+            return requests.head(
+                url, timeout=10, headers=_HEADERS, verify=True, allow_redirects=True
+            ).status_code < 500
+        except (requests.RequestException, ValueError):
             return False

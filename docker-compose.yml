@@ -78,6 +78,41 @@ services:
     ports:
       - "8080:80"
 
+  # NOT: nginx.conf bu servis adlarına proxy yapar; tanımsız bırakılırsa
+  # nginx DNS çözümlemede başarısız olur. Profillerle isteğe bağlı başlatılır.
+  osiris-api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+    image: osiris-api:0.1.0
+    container_name: osiris-api
+    restart: unless-stopped
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
+      OSIRIS_REDIS_URL: redis://redis:6379/0
+      OSIRIS_API_KEY: ${OSIRIS_API_KEY:-}
+      OSIRIS_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8000:8000"
+    profiles: ["api", "full"]
+
+  osiris-web-ui:
+    build:
+      context: ./osiris-web-ui
+    image: osiris-web-ui:0.1.0
+    container_name: osiris-web-ui
+    restart: unless-stopped
+    depends_on:
+      - osiris-api
+    ports:
+      - "3000:3000"
+    profiles: ["ui", "full"]
+
   nginx:
     image: nginx:alpine
     container_name: osiris-nginx
