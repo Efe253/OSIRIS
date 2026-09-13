@@ -9,8 +9,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 DO $$
 BEGIN
     CREATE EXTENSION IF NOT EXISTS timescaledb;
-EXCEPTION WHEN insufficient_privilege OR undefined_file THEN
-    RAISE NOTICE 'TimescaleDB kurulamadi, source_metrics normal tablo olarak kalacak';
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'TimescaleDB kurulamadi (%), source_metrics normal tablo olarak kalacak', SQLSTATE;
 END
 $$;
 
@@ -170,7 +170,7 @@ CREATE TABLE source_metrics (
 DO $$
 BEGIN
     PERFORM create_hypertable('source_metrics', 'time', if_not_exists => TRUE);
-EXCEPTION WHEN undefined_function OR undefined_table THEN
-    RAISE NOTICE 'create_hypertable atlandi (TimescaleDB yok)';
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'create_hypertable atlandi (TimescaleDB yok, %)', SQLSTATE;
 END
 $$;
