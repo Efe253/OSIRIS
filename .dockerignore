@@ -1,0 +1,25 @@
+# OSIRIS — Docker build bağlamı dışında tutulacaklar
+# (özellikle kök context kullanan osiris-api imajı için kritik)
+.git/
+.gitignore
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.venv/
+venv/
+node_modules/
+osiris-web-ui/dist/
+osiris-web-ui/node_modules/
+osiris-web-ui/.vite/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+data/
+logs/
+*.log
+reports/
+.DS_Store
+.idea/
+.vscode/

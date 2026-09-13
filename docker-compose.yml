@@ -98,7 +98,8 @@ services:
       OSIRIS_API_KEY: ${OSIRIS_API_KEY:-}
       OSIRIS_CORS_ORIGINS: http://localhost:3000
     ports:
-      - "8000:8000"
+      # Yalnızca localhost (dış erişim nginx üzerinden). 8000 dolu olabilir.
+      - "127.0.0.1:8001:8000"
     profiles: ["api", "full"]
 
   osiris-web-ui:
@@ -110,7 +111,8 @@ services:
     depends_on:
       - osiris-api
     ports:
-      - "3000:3000"
+      # Yalnızca localhost (dış erişim nginx /ui üzerinden).
+      - "127.0.0.1:3001:3000"
     profiles: ["ui", "full"]
 
   nginx:

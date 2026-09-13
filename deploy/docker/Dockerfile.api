@@ -21,7 +21,10 @@ RUN pip install --no-cache-dir \
     ./osiris-collector \
     ./osiris-graph \
     ./osiris-query \
-    ./osiris-api
+    ./osiris-api \
+ && for req in plugins/*/requirements.txt; do \
+        pip install --no-cache-dir -r "$req"; \
+    done
 
 EXPOSE 8000
 
