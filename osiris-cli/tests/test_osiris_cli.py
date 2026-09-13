@@ -15,7 +15,8 @@ def test_plugins_lists_all() -> None:
     runner = CliRunner()
     result = runner.invoke(main, ["plugins"])
     assert result.exit_code == 0
-    assert "10" in result.output
+    assert "plugin yüklendi" in result.output
+    assert "irc" in result.output  # stdlib-only, her ortamda yüklenir
 
 
 def test_collect_bad_json_and_shape() -> None:
