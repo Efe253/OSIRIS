@@ -1,19 +1,21 @@
+> **Türkçe:** Bu belgenin Türkçe sürümü için [README.tr.md](README.tr.md) dosyasına bakın.
+
 # OSIRIS
 
 > **O**pen **S**ource **I**ntelligence **R**esearch & **I**nformation **S**ystem
 
-OSIRIS, çoklu ağlardan (internet, karanlık ağ, P2P, şifreli ağlar) veri toplayan, bu verileri birbirine bağlayan, ilişkilendiren ve analiz eden; tamamen self-host çalışan gelişmiş bir açık kaynak istihbarat (OSINT) platformudur.
+OSIRIS is an advanced open-source intelligence (OSINT) platform that collects data from multiple networks (surface web, darknets, P2P, encrypted networks), correlates it, and analyzes it — running fully self-hosted.
 
-Sistem, bir VDS (Virtual Dedicated Server) üzerinde 7/24 kesintisiz çalışacak şekilde tasarlanmıştır. Tüm bileşenler kullanıcı kontrolündedir; dışarıya veri sızdırmaz, üçüncü taraf bulut servislerine bağımlı değildir.
+The system is designed to run 24/7 on a VDS (Virtual Dedicated Server). All components are under user control; no data leaks out, no third-party cloud dependencies.
 
-## Temel Felsefe
+## Core Principles
 
-- **Gizlilik önce gelir** — Tüm bağlantılar proxy/VPN/Tor üzerinden yapılabilir
-- **Modülerlik** — Her veri kaynağı bağımsız bir plugin'dir; çalışan sistemi durdurmadan eklenir/çıkarılır
-- **Genişletilebilirlik** — Yeni ağ türleri, protokoller ve analiz yöntemleri kolayca entegre edilebilir
-- **Şeffaflık** — Kaynak kodu açık, her işlem loglanır, denetlenebilir
+- **Privacy first** — all connections can go through proxy/VPN/Tor
+- **Modularity** — every data source is an independent plugin; added/removed without stopping the system
+- **Extensibility** — new network types, protocols, and analysis methods integrate easily
+- **Transparency** — open source, every operation logged, auditable
 
-## Mimari Genel Bakış
+## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -21,79 +23,108 @@ Sistem, bir VDS (Virtual Dedicated Server) üzerinde 7/24 kesintisiz çalışaca
 │                                                                 │
 │  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   │
 │  │  Qt GUI  │   │ Tauri/   │   │   CLI    │   │  REST    │   │
-│  │ (Desktop)│   │Electron  │   │ Arayüzü  │   │  API     │   │
+│  │(planned) │   │Electron  │   │          │   │  API     │   │
 │  └────┬─────┘   └────┬─────┘   └────┬─────┘   └────┬─────┘   │
 │       └──────────────┴──────────────┴──────────────┘          │
 │                              │                                  │
 │                    ┌─────────▼─────────┐                       │
 │                    │   API Gateway /   │                        │
-│                    │   Core Engine     │  (C++ / Rust)          │
+│                    │   Core Engine     │  (C++ / Python)        │
 │                    └─────────┬─────────┘                       │
 │              ┌───────────────┼───────────────┐                 │
 │              │               │               │                  │
 │    ┌─────────▼───┐  ┌────────▼──────┐  ┌────▼────────────┐    │
 │    │  Collector  │  │   Processing  │  │   Storage       │    │
-│    │  Manager   │  │   Pipeline    │  │   Layer         │    │
-│    │  (Python)  │  │   (Python/C++)│  │   (PostgreSQL)  │    │
+│    │  Manager    │  │   Pipeline    │  │   Layer         │    │
+│    │  (Python)   │  │   (Python)    │  │   (PostgreSQL)  │    │
 │    └──────┬──────┘  └───────────────┘  └─────────────────┘    │
 │           │                                                      │
 │    ┌──────▼──────────────────────────────────────────────┐      │
-│    │              Plugin Koleksiyonu                      │      │
+│    │              Plugin Collection                       │      │
 │    │  [WWW] [Tor] [I2P] [RSS] [API] [P2P] [Shodan] ...  │      │
 │    └─────────────────────────────────────────────────────┘      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Modüller
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for layers, data flow, and the security model.
 
-| Modül | Dil | Rol |
-|-------|-----|-----|
-| `osiris-core` | C++20 | Merkezi koordinatör, görev zamanlama, IPC, REST API |
-| `osiris-collector` | Python | Veri toplama plugin'lerini yönetir |
-| `osiris-pipeline` | Python | Temizleme, NER, sınıflandırma, embedding, ilişkilendirme |
-| `osiris-query` | C++/Python | Full-text + semantik arama |
-| `osiris-graph` | Python | Varlık ilişki grafı analizi |
-| `osiris-alert` | Python | Uyarı ve anomali tespiti |
-| `osiris-report` | Python | Rapor üretimi ve dışa aktarım |
-| `osiris-api` | Python | REST API sunucusu |
-| `osiris-cli` | Python | Komut satırı arayüzü |
-| `osiris-web-ui` | React/TS | Tarayıcı tabanlı arayüz |
+## Modules
 
-## Teknoloji Stack'i
+| Module | Language | Role | Status |
+|--------|----------|------|--------|
+| `osiris-core` | C++20 | Central coordinator, task scheduling, IPC | Skeleton (scheduler + plugin lifecycle) |
+| `osiris-collector` | Python | Manages collection plugins | ✅ Working |
+| `osiris-pipeline` | Python | Cleaning, NER, classification, embedding, storage | ✅ Working (embedding optional) |
+| `osiris-query` | Python | Full-text + semantic search | ✅ Working |
+| `osiris-graph` | Python | Entity relationship graph (persistent) | ✅ Working |
+| `osiris-alert` | Python | Alerts + anomaly detection | ✅ Working |
+| `osiris-report` | Python | Report generation and export | ✅ MD/HTML/JSON/CSV/STIX |
+| `osiris-api` | Python | REST API (JWT + RBAC) | ✅ Working |
+| `osiris-cli` | Python | Command-line interface | ✅ Working |
+| `osiris-web-ui` | React/TS | Browser interface | Basic screens |
+| `osiris-sdk` | Python | Shared SDK (plugins, models, security, audit) | ✅ Working |
 
-- **Diller:** C++20, Python 3.11+, Rust (opsiyonel), TypeScript
-- **Veritabanı:** PostgreSQL 16 (+ pgvector, TimescaleDB), Redis, MinIO
-- **Arayüz:** Qt6, Tauri, Electron, React + Tailwind
-- **Otomasyon:** N8N, FreshRSS, Celery + Redis, APScheduler
-- **Güvenlik:** OpenSSL, GnuPG, libsodium, Hashicorp Vault, WireGuard
-- **Dağıtım:** Docker, Docker Compose, Systemd, Nginx/Caddy
+## Technology Stack
 
-## Yol Haritası
+- **Languages:** C++20, Python 3.11+, TypeScript
+- **Database:** PostgreSQL 16 (+ pgvector, TimescaleDB optional), Redis, MinIO
+- **Interface:** CLI, REST API, React + Tailwind Web UI
+- **Automation:** N8N, FreshRSS, APScheduler
+- **Security:** TLS (8443), API keys + JWT + RBAC, SSRF guards, hash-chained audit logs
+- **Deployment:** Docker, Docker Compose, Nginx
 
-| Faz | Kapsam | Süre |
-|-----|--------|------|
-| **Faz 1** | Temel Altyapı: Core Engine, DB şeması, ilk 3 plugin, pipeline, CLI | Ay 1-3 |
-| **Faz 2** | Ağ Genişlemesi: Tor, I2P, IRC/Matrix, Shodan, DNS/WHOIS, Web UI | Ay 4-6 |
-| **Faz 3** | Analiz Katmanı: Graf, semantik arama, uyarı, rapor | Ay 7-9 |
-| **Faz 4** | Otomasyon & Olgunlaşma: N8N, blockchain, SDR, Tauri, testler | Ay 10-12 |
-
-## Hızlı Başlangıç
+## Quick Start
 
 ```bash
-# Tüm servisleri başlat (PostgreSQL, Redis, MinIO, N8N, FreshRSS, Nginx)
+# Copy environment template and fill in secrets
+cp .env.example .env
+
+# Start infrastructure (PostgreSQL, Redis, MinIO, N8N, FreshRSS, Nginx)
 docker compose up -d
 
-# CLI aracını kur
+# Start API + Web UI as well
+docker compose --profile full up -d --build
+
+# Install the CLI
 pip install -e ./osiris-cli
 
-# CLI kullanımı
+# CLI usage
 osiris --help
 ```
 
-## Dokümantasyon
+### API authentication
 
-Detaylı mimari ve planlama dokümanı: [docs/OSIRIS_Technical_Document.md](docs/OSIRIS_Technical_Document.md)
+```bash
+# Issue a token (operator key from .env)
+curl -X POST http://localhost:80/api/auth/token \
+  -H 'Content-Type: application/json' \
+  -d '{"api_key":"<OSIRIS_API_KEY>","role":"analyst"}'
 
-## Lisans
+# Use it
+curl -X POST http://localhost:80/api/search \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <token>' \
+  -d '{"query":"example","limit":5}'
+```
 
-GNU General Public License v3.0 — bkz. [LICENSE](LICENSE)
+Roles: `viewer` (read) → `analyst` (collect + graph write) → `admin` (key management).
+
+## Testing
+
+```bash
+pip install -e ./osiris-sdk -e ./osiris-collector -e ./osiris-pipeline \
+  -e ./osiris-graph -e ./osiris-alert -e ./osiris-report \
+  -e ./osiris-query -e ./osiris-api -e ./osiris-cli
+pip install pytest pytest-cov httpx
+pytest -q  # 80% coverage gate enforced
+```
+
+## Documentation
+
+- Full technical document: [docs/TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md)
+- Architecture summary: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Contributing: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
+
+## License
+
+GNU General Public License v3.0 — see [LICENSE](LICENSE)
