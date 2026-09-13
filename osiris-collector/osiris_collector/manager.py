@@ -29,10 +29,12 @@ class CollectorManager:
         plugins_dir: str | Path = "plugins",
         redis_url: str = "redis://localhost:6379/0",
         queue_name: str = "osiris:raw_items",
+        database_url: str | None = None,
     ) -> None:
         self.plugins_dir = Path(plugins_dir)
         self.redis = redis.Redis.from_url(redis_url, decode_responses=True)
         self.queue_name = queue_name
+        self.database_url = database_url
         self.plugins: dict[str, BaseCollector] = {}
         self.scheduler = BackgroundScheduler()
 
@@ -138,7 +140,61 @@ class CollectorManager:
             )
         else:
             logger.warning("%s: başarısız — %s", plugin_id, result.error)
+        self._record_health(config, result, elapsed_ms)
         return result
+
+    def _record_health(self, config: dict[str, Any], result: CollectionResult,
+                       elapsed_ms: int) -> None:
+        """Kaynak sağlık takibi (doküman §7): sources + source_metrics.
+
+        Yalnızca config'de `source_id` varsa ve database_url tanımlıysa çalışır.
+        Asla koleksiyon sonucunu bozmaz — tüm hatalar yutulur.
+        """
+        source_id = config.get("source_id")
+        if not source_id or not self.database_url:
+            return
+        try:
+            import psycopg
+
+            with psycopg.connect(self.database_url) as conn:
+                with conn.cursor() as cur:
+                    if result.success:
+                        cur.execute(
+                            """
+                            UPDATE sources
+                            SET last_crawled_at = NOW(), last_success_at = NOW(),
+                                failure_count = 0, avg_response_ms = %s,
+                                updated_at = NOW()
+                            WHERE id::text = %s
+                            """,
+                            (elapsed_ms, str(source_id)),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            UPDATE sources
+                            SET last_crawled_at = NOW(),
+                                failure_count = failure_count + 1,
+                                avg_response_ms = %s, updated_at = NOW()
+                            WHERE id::text = %s
+                            """,
+                            (elapsed_ms, str(source_id)),
+                        )
+                    cur.execute(
+                        """
+                        INSERT INTO source_metrics (time, source_id, response_ms, success, items_count)
+                        VALUES (NOW(), NULLIF(%s,'')::uuid, %s, %s, %s)
+                        """,
+                        (
+                            str(source_id),
+                            elapsed_ms,
+                            result.success,
+                            len(result.items) if result.success else 0,
+                        ),
+                    )
+                conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Sağlık kaydı yazılamadı: %s", exc)
 
     def schedule(self, plugin_id: str, cron: str, config: dict[str, Any]) -> None:
         """Bir plugin için cron tabanlı zamanlama ekler (5 alanlı cron)."""

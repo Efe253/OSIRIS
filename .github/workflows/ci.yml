@@ -26,7 +26,7 @@ jobs:
           pip install -e ./osiris-api
           pip install pytest
       - name: Testleri çalıştır
-        run: pytest osiris-pipeline/tests osiris-graph/tests osiris-alert/tests -q
+        run: pytest -q
 
   lint:
     name: Lint (ruff)

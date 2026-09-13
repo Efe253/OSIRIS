@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import json
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -87,6 +88,84 @@ class ReportGenerator:
     def generate_json(self, data: dict[str, Any]) -> str:
         """JSON rapor üretir."""
         return json.dumps(data, ensure_ascii=False, indent=2)
+
+    # STIX 2.1 varlık eşleşmesi (doküman §2.6 — tehdit istihbaratı formatı)
+    _STIX_IOC = {
+        "ip": ("ipv4-addr", "value"),
+        "domain": ("domain-name", "value"),
+        "email": ("email-addr", "value"),
+        "crypto_address": ("cryptocurrency-wallet", "value"),
+        "hash": ("file", "hashes.MD5"),
+        "cve": ("vulnerability", "name"),
+    }
+
+    def generate_stix(self, identity_name: str, title: str,
+                      entities: list[dict[str, Any]]) -> str:
+        """STIX 2.1 Bundle üretir (identity + indicator + observed-data)."""
+        now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        bundle_id = f"bundle--{uuid.uuid4()}"
+        identity_id = f"identity--{uuid.uuid5(uuid.NAMESPACE_DNS, 'osiris.local')}"
+        objects: list[dict[str, Any]] = [
+            {
+                "type": "identity",
+                "spec_version": "2.1",
+                "id": identity_id,
+                "created": now,
+                "modified": now,
+                "name": str(identity_name)[:200] or "OSIRIS",
+                "identity_class": "system",
+            }
+        ]
+        for ent in entities[:500]:
+            if not isinstance(ent, dict):
+                continue
+            etype = str(ent.get("type", "custom"))
+            value = str(ent.get("value", ""))[:500]
+            if not value or etype not in self._STIX_IOC:
+                continue
+            stix_type, prop = self._STIX_IOC[etype]
+            obj_id = f"{stix_type}--{uuid.uuid5(uuid.NAMESPACE_URL, f'{etype}:{value.lower()}')}"
+            if etype == "cve":
+                objects.append({
+                    "type": "vulnerability",
+                    "spec_version": "2.1",
+                    "id": obj_id,
+                    "created": now,
+                    "modified": now,
+                    "name": value.upper(),
+                    "created_by_ref": identity_id,
+                })
+            elif etype == "hash":
+                objects.append({
+                    "type": "file",
+                    "spec_version": "2.1",
+                    "id": obj_id,
+                    "hashes": {"MD5": value},
+                    "created_by_ref": identity_id,
+                })
+            else:
+                pattern = f"[{stix_type}:{prop} = '{value}']"
+                objects.append({
+                    "type": "indicator",
+                    "spec_version": "2.1",
+                    "id": f"indicator--{uuid.uuid5(uuid.NAMESPACE_URL, pattern)}",
+                    "created": now,
+                    "modified": now,
+                    "pattern": pattern,
+                    "pattern_type": "stix",
+                    "valid_from": now,
+                    "labels": ["malicious-activity"],
+                    "created_by_ref": identity_id,
+                    "object_marking_refs": [],
+                    "description": f"OSIRIS: {title}"[:500],
+                })
+        bundle = {
+            "type": "bundle",
+            "id": bundle_id,
+            "spec_version": "2.1",
+            "objects": objects,
+        }
+        return json.dumps(bundle, ensure_ascii=False, indent=2)
 
     @staticmethod
     def _csv_safe(value: Any) -> Any:

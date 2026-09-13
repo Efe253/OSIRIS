@@ -17,5 +17,10 @@ dependencies = [
     "pandas>=2.0",
 ]
 
+[project.optional-dependencies]
+# Semantik embedding (ağır: torch indirir). Kurulmazsa pipeline vektörsüz çalışır.
+# pip install "osiris-pipeline[embedding]"
+embedding = ["sentence-transformers>=2.2"]
+
 [tool.setuptools.packages.find]
 include = ["osiris_pipeline*"]

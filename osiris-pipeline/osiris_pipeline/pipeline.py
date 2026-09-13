@@ -5,7 +5,7 @@ Aşamalar (doküman §5.3):
 2. Dil Tespiti  — otomatik dil etiketleme
 3. Varlık Çıkarma (NER)
 4. Sınıflandırma
-5. Embedding    — semantik vektör
+5. Embedding    — semantik vektör (opsiyonel, OSIRIS_EMBEDDING_MODEL)
 6. İlişkilendirme
 7. Depolama     — PostgreSQL'e yazma
 """
@@ -16,6 +16,7 @@ import hashlib
 import ipaddress
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -56,11 +57,15 @@ class ProcessingPipeline:
         redis_url: str = "redis://localhost:6379/0",
         queue_name: str = "osiris:raw_items",
         database_url: str | None = None,
+        embedding_model: str | None = None,
     ) -> None:
         self.redis = redis.Redis.from_url(redis_url, decode_responses=True)
         self.queue_name = queue_name
         self.database_url = database_url
+        self.embedding_model_name = embedding_model or os.getenv("OSIRIS_EMBEDDING_MODEL")
         self._nlp = None
+        self._embedder = None
+        self._embedding_usable: bool | None = None  # pgvector boyut uyumu önbelleği
 
     @property
     def nlp(self):
@@ -96,6 +101,7 @@ class ProcessingPipeline:
         entities = self.extract_entities(cleaned)
         topics = self.classify(cleaned)
         content_hash = hashlib.sha256(cleaned.encode()).hexdigest()
+        embedding = self.generate_embedding(cleaned)
 
         return {
             "plugin_id": str(plugin_id),
@@ -107,6 +113,7 @@ class ProcessingPipeline:
             },
             "entities": entities,
             "topics": topics,
+            "embedding": embedding,
         }
 
     def clean(self, text: str) -> str:
@@ -192,6 +199,39 @@ class ProcessingPipeline:
         lowered = text.lower()
         return [t for t, kws in _TOPIC_KEYWORDS.items() if any(k in lowered for k in kws)]
 
+    @property
+    def embedder(self):
+        """Sentence-transformers modelini tembel yükleme (yoksa None)."""
+        if self._embedder is None and self.embedding_model_name:
+            try:
+                from sentence_transformers import SentenceTransformer
+
+                self._embedder = SentenceTransformer(self.embedding_model_name)
+            except ImportError:
+                logger.warning(
+                    "sentence-transformers kurulu değil; embedding atlanıyor "
+                    "(pip install 'osiris-pipeline[embedding]')"
+                )
+                self._embedder = False
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Embedding modeli yüklenemedi: %s", exc)
+                self._embedder = False
+        return self._embedder or None
+
+    def generate_embedding(self, text: str) -> list[float] | None:
+        """Semantik vektör üretir. Model yoksa None döner."""
+        if not text or not text.strip():
+            return None
+        model = self.embedder
+        if model is None:
+            return None
+        try:
+            vec = model.encode(text[:8000], normalize_embeddings=True)
+            return [float(x) for x in vec]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Embedding üretilemedi: %s", exc)
+            return None
+
     def run(self, batch_size: int = 10) -> int:
         """Kuyruktan batch halinde kayıt işler. İşlenen kayıt sayısını döndürür."""
         batch_size = max(1, min(int(batch_size), 100))
@@ -230,43 +270,22 @@ class ProcessingPipeline:
             raise ValueError("content_hash yok")
         topics: list[str] = result.get("topics", [])
         tags = list({*(item.get("tags") or []), *topics})[:50]
+        embedding = result.get("embedding")
+        if not isinstance(embedding, list) or not embedding:
+            embedding = None
 
         with psycopg.connect(self.database_url) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO items
-                        (source_id, raw_content, cleaned_content, url, title,
-                         language, collected_at, published_at, content_hash, metadata, tags)
-                    VALUES
-                        (NULLIF(%s,'')::uuid, %s, %s, %s, %s,
-                         %s, NOW(), NULLIF(%s,'')::timestamptz, %s, %s::jsonb, %s)
-                    ON CONFLICT (content_hash) DO NOTHING
-                    RETURNING id::text
-                    """,
-                    (
-                        item.get("source_id") or "",
-                        (item.get("raw_content") or "")[:_MAX_CONTENT_CHARS],
-                        (item.get("cleaned_content") or "")[:_MAX_CONTENT_CHARS],
-                        (item.get("url") or "")[:2048],
-                        (item.get("title") or "")[:500],
-                        (item.get("language") or "unknown")[:5],
-                        item.get("published_at") or "",
-                        content_hash,
-                        json.dumps(item.get("metadata") or {}, ensure_ascii=False),
-                        tags,
-                    ),
-                )
-                row = cur.fetchone()
-                if row is None:
+                item_id = self._insert_item(cur, item, content_hash, tags, embedding)
+                if item_id is None:
                     # Dedup: aynı hash zaten var
                     cur.execute(
                         "SELECT id::text FROM items WHERE content_hash = %s",
                         (content_hash,),
                     )
                     existing = cur.fetchone()
+                    conn.commit()
                     return existing[0] if existing else None
-                item_id: str = row[0]
                 for ent in result.get("entities", [])[:200]:
                     etype = ent.get("type", "custom")
                     if etype not in _VALID_ENTITY_TYPES:
@@ -297,3 +316,62 @@ class ProcessingPipeline:
             conn.commit()
         logger.info("Depolandı: %s (%s)", content_hash[:12], item_id)
         return item_id
+
+    def _insert_item(self, cur: Any, item: dict[str, Any], content_hash: str,
+                     tags: list[str], embedding: list[float] | None) -> str | None:
+        """Item satırını yazar. Boyut uyumsuz embedding'i atlayıp vektörsüz yazar."""
+        base_params: tuple = (
+            item.get("source_id") or "",
+            (item.get("raw_content") or "")[:_MAX_CONTENT_CHARS],
+            (item.get("cleaned_content") or "")[:_MAX_CONTENT_CHARS],
+            (item.get("url") or "")[:2048],
+            (item.get("title") or "")[:500],
+            (item.get("language") or "unknown")[:5],
+            item.get("published_at") or "",
+            content_hash,
+            json.dumps(item.get("metadata") or {}, ensure_ascii=False),
+            tags,
+        )
+        if embedding is not None and self._embedding_usable is not False:
+            vector_literal = "[" + ",".join(str(float(x)) for x in embedding) + "]"
+            cur.execute("SAVEPOINT osiris_embedding")
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO items
+                        (source_id, raw_content, cleaned_content, url, title,
+                         language, collected_at, published_at, content_hash, metadata, tags, embedding)
+                    VALUES
+                        (NULLIF(%s,'')::uuid, %s, %s, %s, %s,
+                         %s, NOW(), NULLIF(%s,'')::timestamptz, %s, %s::jsonb, %s, %s::vector)
+                    ON CONFLICT (content_hash) DO NOTHING
+                    RETURNING id::text
+                    """,
+                    (*base_params, vector_literal),
+                )
+                cur.execute("RELEASE SAVEPOINT osiris_embedding")
+                self._embedding_usable = True
+                row = cur.fetchone()
+                return row[0] if row else None
+            except Exception as exc:  # noqa: BLE001 — örn. pgvector boyut uyumsuzluğu
+                cur.execute("ROLLBACK TO SAVEPOINT osiris_embedding")
+                logger.warning(
+                    "Embedding ile yazılamadı (%s); vektörsüz deneniyor",
+                    type(exc).__name__,
+                )
+                self._embedding_usable = False
+        cur.execute(
+            """
+            INSERT INTO items
+                (source_id, raw_content, cleaned_content, url, title,
+                 language, collected_at, published_at, content_hash, metadata, tags)
+            VALUES
+                (NULLIF(%s,'')::uuid, %s, %s, %s, %s,
+                 %s, NOW(), NULLIF(%s,'')::timestamptz, %s, %s::jsonb, %s)
+            ON CONFLICT (content_hash) DO NOTHING
+            RETURNING id::text
+            """,
+            base_params,
+        )
+        row = cur.fetchone()
+        return row[0] if row else None

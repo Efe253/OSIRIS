@@ -7,4 +7,10 @@ select = ["E", "F", "I", "B", "UP"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]
-testpaths = ["osiris-pipeline/tests", "osiris-graph/tests"]
+testpaths = [
+    "osiris-sdk/tests",
+    "osiris-pipeline/tests",
+    "osiris-graph/tests",
+    "osiris-alert/tests",
+    "osiris-report/tests",
+]

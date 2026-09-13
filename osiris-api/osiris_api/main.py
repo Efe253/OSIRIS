@@ -58,6 +58,19 @@ def get_collector() -> CollectorManager:
     return _collector
 
 
+def _audit(action: str, resource: str | None = None,
+           detail: dict[str, Any] | None = None) -> None:
+    """Best-effort denetim kaydı (doküman §10.4). Asla isteği bozmaz."""
+    try:
+        import psycopg
+        from osiris.audit import append_audit
+
+        with psycopg.connect(DATABASE_URL, connect_timeout=3) as conn:
+            append_audit(conn, "api", action, resource, detail)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Denetim kaydı atlandı: %s", exc)
+
+
 class CollectRequest(BaseModel):
     plugin_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
     config: dict[str, Any] = Field(default_factory=dict, max_length=50)
@@ -106,19 +119,23 @@ def collect(req: CollectRequest) -> dict[str, Any]:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if not result.success:
+        _audit("collect.failed", req.plugin_id, {"error": result.error})
         raise HTTPException(status_code=502, detail=result.error)
+    _audit("collect", req.plugin_id, {"items": len(result.items)})
     return {"items": len(result.items), "metadata": result.metadata}
 
 
 @app.post("/search", dependencies=[Depends(require_api_key)])
 def search(req: SearchRequest) -> list[dict[str, Any]]:
     try:
-        return _query.fulltext_search(req.query, req.limit)
+        rows = _query.fulltext_search(req.query, req.limit)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("Arama hatası")
         raise HTTPException(status_code=500, detail="Arama başarısız") from exc
+    _audit("search", None, {"query": req.query[:200], "hits": len(rows)})
+    return rows
 
 
 @app.post("/search/entity", dependencies=[Depends(require_api_key)])
