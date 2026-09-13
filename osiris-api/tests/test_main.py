@@ -221,7 +221,7 @@ def test_admin_only_key_management(monkeypatch) -> None:
     assert r.status_code == 200
     assert r.json()["api_key"].startswith("osiris_")
     assert "api_key" not in str(c.get("/auth/keys", headers=oh).json())
-    assert c.delete("/auth/keys/key-1", headers=oh).status_code == 200
+    assert c.delete("/auth/keys/12345678-1234-1234-1234-123456789abc", headers=oh).status_code == 200
     assert c.post("/auth/keys", json={"username": "x", "role": "kok"},
                   headers=oh).status_code == 400
 
@@ -316,8 +316,9 @@ def test_sources_list_delete_collect(monkeypatch) -> None:
                                     "metadata": {"config": {"feed_url": "u"}}},
                fetchall=[{"id": "s", "name": "N"}])
     assert c.get("/sources", headers=auth()).json() == [{"id": "s", "name": "N"}]
-    assert c.delete("/sources/s", headers=auth()).json() == {"status": "deleted"}
-    assert c.delete("/sources/yok", headers=auth()).status_code == 404 or True
+    sid = "12345678-1234-1234-1234-123456789abc"
+    assert c.delete(f"/sources/{sid}", headers=auth()).json() == {"status": "deleted"}
+    assert c.delete("/sources/yok", headers=auth()).status_code == 404
 
 
 def test_collect_source_builds_config(monkeypatch) -> None:
@@ -339,9 +340,10 @@ def test_collect_source_builds_config(monkeypatch) -> None:
     api_main._collector.run_collection = fake_run  # type: ignore[method-assign]
     patch_db(monkeypatch, fetchone={"plugin_id": "rss", "url": "https://f/rss",
                                     "metadata": {"config": {}}})
-    r = c.post("/sources/abc/collect", headers=auth())
+    sid = "12345678-1234-1234-1234-123456789abc"
+    r = c.post(f"/sources/{sid}/collect", headers=auth())
     assert r.status_code == 200
-    assert seen["source_id"] == "abc" and seen["feed_url"] == "https://f/rss"
+    assert seen["source_id"] == sid and seen["feed_url"] == "https://f/rss"
 
 
 def test_saved_queries_crud_and_alert_test(monkeypatch) -> None:
@@ -361,7 +363,7 @@ def test_saved_queries_crud_and_alert_test(monkeypatch) -> None:
                headers=auth())
     assert t.status_code == 200 and len(t.json()) == 1
     assert t.json()[0]["query_id"] == "q-1"
-    assert c.delete("/saved-queries/q-1", headers=auth()).json() == {"status": "deleted"}
+    assert c.delete("/saved-queries/12345678-1234-1234-1234-123456789abc", headers=auth()).json() == {"status": "deleted"}
 
 
 def test_report_markdown(monkeypatch) -> None:
@@ -388,3 +390,41 @@ def test_plugins_include_schema(monkeypatch) -> None:
     lst = c.get("/plugins", headers=auth()).json()
     rss = next(p for p in lst if p["id"] == "rss")
     assert "feed_url" in str(rss["config_schema"])
+
+
+def test_items_detail_top_and_batch(monkeypatch) -> None:
+    c = make_client(monkeypatch)
+    item = {"id": "i1", "title": "T", "entities": []}
+    patch_db(monkeypatch,
+             fetchone=[item, [{"type": "email", "value": "a@b"}]],
+             fetchall=[{"type": "email", "value": "a@b", "mentions": 5}])
+    uid = "12345678-1234-1234-1234-123456789abc"
+    r = c.get(f"/items/{uid}", headers=auth())
+    assert r.status_code == 200 and r.json()["entities"][0]["value"] == "a@b"
+    assert c.get("/items/bozuk", headers=auth()).status_code == 404
+    t = c.get("/entities/top?limit=5", headers=auth())
+    assert t.status_code == 200 and t.json()[0]["mentions"] == 5
+    assert c.get("/entities/top?entity_type=uzayli", headers=auth()).status_code == 400
+
+
+def test_collect_batch(monkeypatch) -> None:
+    from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
+
+    class P(BaseCollector):
+        id = "ok"
+        name = "O"
+        network_type = "www"
+
+    c = make_client(monkeypatch)
+    api_main._collector.plugins["ok"] = P()
+    api_main._collector.run_collection = lambda pid, cfg: CollectionResult(  # type: ignore[method-assign]
+        items=[CollectedItem(raw_content="x")])
+    body = {"jobs": [{"plugin_id": "ok", "config": {}},
+                     {"plugin_id": "yok", "config": {}}]}
+    r = c.post("/collect/batch", json=body, headers=auth())
+    assert r.status_code == 200
+    data = r.json()
+    assert (data["ok"], data["total"]) == (1, 2)
+    assert c.post("/collect/batch", json={"jobs": []}, headers=auth()).status_code == 422
+    many = {"jobs": [{"plugin_id": "ok", "config": {}}] * 11}
+    assert c.post("/collect/batch", json=many, headers=auth()).status_code == 422

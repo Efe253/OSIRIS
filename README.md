@@ -125,6 +125,7 @@ pytest -q  # 80% coverage gate enforced
 ## Documentation
 
 - Full technical document: [docs/TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md)
+- API reference: [docs/API.md](docs/API.md) ([Türkçe](docs/API.tr.md))
 - Architecture summary: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Contributing: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
 

@@ -228,6 +228,8 @@ Aşamalar: temizle → dil → NER → sınıflandır → embed (opsiyonel) → 
 - Çıktı `output_dir` ile kilitli; iri raporlar reddedilir
 
 ### 5.8 REST API (`osiris-api`)
+
+Tam uç başvurusu: [API.tr.md](API.tr.md).
 | Uç | Yöntem | Min. rol |
 |----|--------|----------|
 | `/health` | GET | açık |

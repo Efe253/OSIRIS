@@ -233,6 +233,8 @@ Stages: clean → language → NER → classify → embed (optional) → dedup �
 - Output confined to `output_dir`; oversized reports rejected
 
 ### 5.8 REST API (`osiris-api`)
+
+Full endpoint reference: [API.md](API.md).
 | Endpoint | Method | Min. role |
 |----------|--------|-----------|
 | `/health` | GET | open |

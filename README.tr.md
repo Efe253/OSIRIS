@@ -124,6 +124,7 @@ pytest -q  # %80 kapsam eşiği zorunlu
 ## Dokümantasyon
 
 - Tam teknik doküman: [docs/TEKNIK_DOKUMAN.tr.md](docs/TEKNIK_DOKUMAN.tr.md) ([English](docs/TECHNICAL_DOCUMENT.md))
+- API başvurusu: [docs/API.tr.md](docs/API.tr.md) ([English](docs/API.md))
 - Mimari özet: [docs/ARCHITECTURE.tr.md](docs/ARCHITECTURE.tr.md)
 - Katkı: [docs/CONTRIBUTING.tr.md](docs/CONTRIBUTING.tr.md)
 
