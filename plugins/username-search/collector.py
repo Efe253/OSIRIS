@@ -23,6 +23,28 @@ from osiris.security import fetch_url
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{1,63}$")
 _DEFAULT_DB = Path(__file__).parent / "sites.json"
+_FULL_DB = Path(__file__).parent / "sites_full.json"
+
+
+def _as_list(value) -> list[str]:
+    """Maigret'in dize-veya-liste alanları (presenseStrs yazım hatası dahil)."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value][:10]
+    if isinstance(value, str):
+        s = value.strip()
+        if s.startswith("["):
+            import ast
+
+            try:
+                parsed = ast.literal_eval(s)
+                if isinstance(parsed, list):
+                    return [str(v) for v in parsed][:10]
+            except (ValueError, SyntaxError):
+                pass
+        return [s] if s else []
+    return [str(value)]
 
 
 class UsernameSearchCollector(BaseCollector):
@@ -30,26 +52,42 @@ class UsernameSearchCollector(BaseCollector):
     name = "Username Search"
     network_type = "www"
 
-    def load_sites(self, db_path: str | Path | None = None) -> dict[str, dict]:
-        """Site DB'sini yükler (Maigret uyumlu)."""
-        path = Path(db_path) if db_path else _DEFAULT_DB
+    def load_sites(self, db_path: str | Path | None = None,
+                   full: bool = False) -> dict[str, dict]:
+        """Site DB'sini yükler (Maigret uyumlu: sarmalayıcı + yazım hatası toleranslı)."""
+        if db_path:
+            path = Path(db_path)
+        elif full and _FULL_DB.is_file():
+            path = _FULL_DB
+        else:
+            path = _DEFAULT_DB
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise ValueError(f"Site DB okunamadı: {exc}") from exc
+        if isinstance(data, dict) and isinstance(data.get("sites"), dict):
+            data = data["sites"]  # ham Maigret data.json da verilebilir
+        if not isinstance(data, dict):
+            raise ValueError("Site DB biçimi geçersiz")
         sites = {}
         for name, rule in data.items():
             if name.startswith("_") or not isinstance(rule, dict):
                 continue
-            url = rule.get("url", "")
+            if rule.get("disabled"):
+                continue
+            url = rule.get("urlProbe") or rule.get("url") or ""
             if "{username}" not in str(url):
                 continue
+            check = str(rule.get("checkType", "status_code"))
+            if check not in ("status_code", "message", "response_url"):
+                continue
+            presence = _as_list(rule.get("presenceStrs")) + _as_list(rule.get("presenseStrs"))
             sites[str(name)] = {
                 "url": str(url),
-                "check_type": str(rule.get("checkType", "status_code")),
-                "presence": [str(s) for s in rule.get("presenceStrs", [])][:10],
-                "absence": [str(s) for s in rule.get("absenceStrs", [])][:10],
-                "tags": [str(t) for t in rule.get("tags", [])][:10],
+                "check_type": check,
+                "presence": presence[:10],
+                "absence": _as_list(rule.get("absenceStrs"))[:10],
+                "tags": [str(t) for t in _as_list(rule.get("tags"))][:10],
             }
         return sites
 
@@ -108,7 +146,8 @@ class UsernameSearchCollector(BaseCollector):
         if not username or not isinstance(username, str) or not _USERNAME_RE.match(username):
             return CollectionResult(items=[], success=False, error="Geçersiz username")
         try:
-            sites = self.load_sites(cfg.get("sites_db"))
+            sites = self.load_sites(cfg.get("sites_db"),
+                                    full=bool(cfg.get("full", False)))
         except ValueError as exc:
             return CollectionResult(items=[], success=False, error=str(exc))
         only = cfg.get("sites")

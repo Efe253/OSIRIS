@@ -9,16 +9,26 @@ URL'lerini yoklar, bulunan profilleri öğe olarak döndürür.
 osiris collect username-search --config '{"username":"ornek","tags":["dev"],"max_sites":50}'
 ```
 
-## Binlerce site (Maigret DB)
+## Binlerce site (Maigret + WhatsMyName birleşik DB)
 
-Gömülü DB ~60 popüler site içerir. Tam Maigret veritabanı için:
+`sites_full.json` (**~2500 site**) repoda gömülü gelir — ek indirme gerekmez:
 
 ```bash
-# Maigret reposundan güncel DB'yi indirin
-curl -sL https://raw.githubusercontent.com/soxoj/maigret/main/maigret/resources/data.json -o /tmp/maigret-db.json
-
-osiris collect username-search --config '{"username":"ornek","sites_db":"/tmp/maigret-db.json","max_sites":500}'
+osiris collect username-search --config '{"username":"ornek","full":true,"max_sites":300}'
 ```
+
+Kaynaklar: [Maigret](https://github.com/soxoj/maigret) (~1980 doğrudan site)
++ [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) (~535 benzersiz).
+Motor-tabanlı (arama motoru gerektiren) ve devre-dışı siteler elenir.
+
+DB'yi güncellemek için:
+
+```bash
+python3 plugins/username-search/tools/build_full_db.py
+```
+
+Özel/ham Maigret `data.json` da doğrudan verilebilir (`sites_db` yolu —
+sarmalayıcı, `presenseStrs` yazım hatası ve dize-liste alanları tolere edilir).
 
 Desteklenen `checkType` değerleri: `status_code`, `message`
 (`presenceStrs`/`absenceStrs`), `response_url`. Bilinmeyen türler atlanır.

@@ -256,7 +256,7 @@ Auth: `X-API-Key` (operator) or per-user DB keys or `Authorization: Bearer <JWT>
 
 ## 6. Supported Networks and Protocols
 
-Implemented collectors (11): **web-scraper** (WWW), **tor** (`.onion` via localhost SOCKS5), **i2p** (eepsites via localhost HTTP proxy), **rss** (RSS/Atom, capped), **rest-api** (method allowlist, JSON-path dig), **irc** (injection-sanitized, PING-aware, time-boxed), **matrix** (room history, URL-encoded IDs), **dns-whois** (validated domains, allowlisted record types, bounded WHOIS), **shodan** (key never logged), **blockchain** (EVM `eth_blockNumber`/balance/txcount, Bitcoin via Blockstream allowlist), **username-search** (Maigret-style username footprint across 60+ bundled sites; drop-in Maigret `data.json` supported for thousands).
+Implemented collectors (11): **web-scraper** (WWW), **tor** (`.onion` via localhost SOCKS5), **i2p** (eepsites via localhost HTTP proxy), **rss** (RSS/Atom, capped), **rest-api** (method allowlist, JSON-path dig), **irc** (injection-sanitized, PING-aware, time-boxed), **matrix** (room history, URL-encoded IDs), **dns-whois** (validated domains, allowlisted record types, bounded WHOIS), **shodan** (key never logged), **blockchain** (EVM `eth_blockNumber`/balance/txcount, Bitcoin via Blockstream allowlist), **username-search** (Maigret-style username footprint across ~2500 bundled sites: Maigret + WhatsMyName merged DB, refreshable via `tools/build_full_db.py`).
 
 Planned: Freenet/ZeroNet/RetroShare, BitTorrent/IPFS, XMPP/Nostr/Fediverse, BGP/cert-transparency, SDR/ADS-B/AIS, Monero limits documentation.
 

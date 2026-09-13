@@ -12,6 +12,7 @@
     "max_sites": {"type": "integer", "default": 200},
     "workers": {"type": "integer", "default": 10},
     "timeout": {"type": "integer", "default": 15},
+    "full": {"type": "boolean", "default": false, "description": "Tam DB (2500+ site: Maigret+WhatsMyName birleşik)"},
     "sites_db": {"type": "string", "description": "Özel site DB yolu (Maigret data.json uyumlu)"}
   },
   "capabilities": ["username", "profile", "social"],

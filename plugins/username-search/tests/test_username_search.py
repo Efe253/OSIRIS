@@ -83,7 +83,7 @@ def test_response_url_detection(monkeypatch) -> None:
 
     monkeypatch.setattr(ucol, "fetch_url", fake_fetch)
     orig = c.load_sites
-    c.load_sites = lambda db=None: sites  # type: ignore[method-assign]
+    c.load_sites = lambda db=None, full=False: sites  # type: ignore[method-assign]
     try:
         r = c.collect({"username": "testuser", "sites": ["TestSite"]})
     finally:
@@ -109,3 +109,29 @@ def test_error_isolation_and_filters(monkeypatch) -> None:
 
 def test_health() -> None:
     assert UsernameSearchCollector().health_check() is True
+
+
+def test_full_db_loads_thousands() -> None:
+    c = UsernameSearchCollector()
+    sites = c.load_sites(full=True)
+    assert len(sites) > 2000
+    # yazım hatalı anahtar ve sarmalayıcı tolere edilir
+    assert any(v["presence"] for v in sites.values())
+
+
+def test_raw_maigret_wrapper_tolerated(tmp_path) -> None:
+    import json as _json
+
+    c = UsernameSearchCollector()
+    db = tmp_path / "db.json"
+    db.write_text(_json.dumps({"sites": {
+        "Demo": {"url": "https://example.com/{u}".replace("{u}", "{username}"),
+                 "checkType": "message", "presenseStrs": ["hos geldin"],
+                 "tags": "tek-etiket"},
+        "Kotu": {"url": "https://example.com/sabit", "checkType": "nukleer"},
+        "Kapali": {"url": "https://example.com/{username}", "disabled": True},
+    }}))
+    sites = c.load_sites(str(db))
+    assert list(sites) == ["Demo"]
+    assert sites["Demo"]["presence"] == ["hos geldin"]
+    assert sites["Demo"]["tags"] == ["tek-etiket"]
