@@ -18,12 +18,20 @@
         "url": "http://osiris-api:8000/search",
         "method": "POST",
         "sendBody": true,
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "X-API-Key", "value": "={{ $env.OSIRIS_API_KEY }}"}
+          ]
+        },
         "bodyParameters": {
           "parameters": [
             {"name": "query", "value": "{{ $json.query }}"},
             {"name": "limit", "value": 20}
           ]
-        }
+        },
+        "options": {"timeout": 30000}
       },
       "id": "search",
       "name": "OSIRIS Arama",
@@ -36,12 +44,20 @@
         "url": "http://osiris-api:8000/collect",
         "method": "POST",
         "sendBody": true,
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "X-API-Key", "value": "={{ $env.OSIRIS_API_KEY }}"}
+          ]
+        },
         "bodyParameters": {
           "parameters": [
             {"name": "plugin_id", "value": "rss"},
             {"name": "config", "value": "={{ JSON.stringify({feed_url: $json.feed_url}) }}"}
           ]
-        }
+        },
+        "options": {"timeout": 60000}
       },
       "id": "collect",
       "name": "OSIRIS Topla",

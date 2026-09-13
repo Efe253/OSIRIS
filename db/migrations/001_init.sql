@@ -4,8 +4,15 @@
 
 -- pgvector eklentisi (semantik arama için)
 CREATE EXTENSION IF NOT EXISTS vector;
--- TimescaleDB eklentisi (zaman serisi verileri için)
-CREATE EXTENSION IF NOT EXISTS timescaledb;
+-- TimescaleDB eklentisi (zaman serisi verileri için; kurulu değilse uyarıyla geçilir,
+-- pgvector/pgvector:pg16 imajında varsayılan olarak YOKTUR — bkz. source_metrics)
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS timescaledb;
+EXCEPTION WHEN insufficient_privilege OR undefined_file THEN
+    RAISE NOTICE 'TimescaleDB kurulamadi, source_metrics normal tablo olarak kalacak';
+END
+$$;
 
 -- UUID üretimi
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -159,4 +166,11 @@ CREATE TABLE source_metrics (
     items_count INTEGER
 );
 
-SELECT create_hypertable('source_metrics', 'time', if_not_exists => TRUE);
+-- TimescaleDB yoksa hypertable oluşturulamaz; tablo normal tablo olarak kalır.
+DO $$
+BEGIN
+    PERFORM create_hypertable('source_metrics', 'time', if_not_exists => TRUE);
+EXCEPTION WHEN undefined_function OR undefined_table THEN
+    RAISE NOTICE 'create_hypertable atlandi (TimescaleDB yok)';
+END
+$$;

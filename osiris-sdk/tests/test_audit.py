@@ -69,20 +69,30 @@ def test_verify_chain_ok_and_tamper() -> None:
     c2 = FakeConn(rows=[(h1,)])
     h2 = append_audit(c2, "u", "a2", None, None)["hash"]
 
-
-    def row(user, action, resource, detail, prev, digest):
-        return (user, action, resource, detail, prev, digest)
+    def row(rid, user, action, resource, detail, prev, digest):
+        return (rid, user, action, resource, detail, prev, digest)
 
     good = FakeConn(rows=[
-        row("u", "a1", "r", {"n": 1}, None, h1),
-        row("u", "a2", None, {}, h1, h2),
+        row(2, "u", "a2", "", {}, h1, h2),
+        row(1, "u", "a1", "r", {"n": 1}, None, h1),
     ])
     res = verify_chain(good)
-    assert res == {"ok": True, "checked": 2}
+    assert res["ok"] is True and res["checked"] == 2
 
     tampered = FakeConn(rows=[
-        row("u", "a1", "r", {"n": 999}, None, h1),
-        row("u", "a2", None, {}, h1, h2),
+        row(2, "u", "a2", "", {}, h1, h2),
+        row(1, "u", "a1", "r", {"n": 999}, None, h1),
     ])
     res2 = verify_chain(tampered)
     assert res2["ok"] is False
+
+
+def test_append_audit_truncates_before_hash() -> None:
+    # 200+ karakter user_id: saklananla hash girdisi aynı olmalı (tekrar doğrulanabilir)
+    conn = FakeConn()
+    long_user = "u" * 300
+    out = append_audit(conn, long_user, "act", "res", {})
+    assert conn.cur.inserts[0][0] == "u" * 200
+    # verify kanonik yükü saklanan değerden kurar → tutarlı olmalı
+    check = FakeConn(rows=[(1, "u" * 200, "act", "res", {}, None, out["hash"])])
+    assert verify_chain(check)["ok"] is True

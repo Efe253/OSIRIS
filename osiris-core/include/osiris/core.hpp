@@ -63,6 +63,7 @@ public:
     // Görev yönetimi
     void schedule_task(const Task& task);
     void run_scheduler();
+    void stop_scheduler();
 
     // REST API sunucusu (iç ve dış arayüzler için)
     void start_api_server(int port);

@@ -1,6 +1,8 @@
 #include "osiris/core.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -13,7 +15,7 @@ struct Core::Impl {
     std::map<std::string, std::unique_ptr<Plugin>> plugins;
     std::vector<Task> tasks;
     std::mutex mutex;
-    bool running = false;
+    std::atomic<bool> running{false};
 };
 
 Core::Core() : impl_(std::make_unique<Impl>()) {
@@ -21,7 +23,8 @@ Core::Core() : impl_(std::make_unique<Impl>()) {
 }
 
 Core::~Core() {
-    if (impl_->running) {
+    if (impl_->running.load()) {
+        stop_scheduler();
         stop_plugin("");
     }
 }
@@ -74,12 +77,17 @@ void Core::schedule_task(const Task& task) {
 }
 
 void Core::run_scheduler() {
-    impl_->running = true;
+    impl_->running.store(true);
     Logger::instance().info("Zamanlayıcı başlatıldı");
     // Faz 1: temel zamanlayıcı döngüsü. Cron ayrıştırma Faz 2'de eklenecek.
-    while (impl_->running) {
+    while (impl_->running.load()) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
+    Logger::instance().info("Zamanlayıcı durduruldu");
+}
+
+void Core::stop_scheduler() {
+    impl_->running.store(false);
 }
 
 void Core::start_api_server(int port) {

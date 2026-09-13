@@ -156,7 +156,7 @@ class CollectorManager:
         try:
             import psycopg
 
-            with psycopg.connect(self.database_url) as conn:
+            with psycopg.connect(self.database_url, connect_timeout=5) as conn:
                 with conn.cursor() as cur:
                     if result.success:
                         cur.execute(

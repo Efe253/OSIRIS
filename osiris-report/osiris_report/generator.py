@@ -144,7 +144,9 @@ class ReportGenerator:
                     "created_by_ref": identity_id,
                 })
             else:
-                pattern = f"[{stix_type}:{prop} = '{value}']"
+                # STIX dize değişmezi: tersbölü ve tek tırnak kaçırılmalı
+                safe_value = value.replace("\\", "\\\\").replace("'", "\\'")
+                pattern = f"[{stix_type}:{prop} = '{safe_value}']"
                 objects.append({
                     "type": "indicator",
                     "spec_version": "2.1",
