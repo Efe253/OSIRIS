@@ -152,7 +152,8 @@ padding:0 1rem;color:#1a1a1a}h1{border-bottom:2px solid #333}h3{color:#444}
             if not isinstance(ent, dict):
                 continue
             etype = str(ent.get("type", "custom"))
-            value = str(ent.get("value", ""))[:500]
+            # STIX dize değişmezleri tek satır olmalı (satır sonu desen bozar)
+            value = str(ent.get("value", "")).replace("\r", " ").replace("\n", " ")[:500]
             if not value or etype not in self._STIX_IOC:
                 continue
             stix_type, prop = self._STIX_IOC[etype]

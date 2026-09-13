@@ -24,8 +24,8 @@ app = FastAPI(title="OSIRIS API", version="0.1.0", docs_url="/docs", redoc_url=N
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("OSIRIS_CORS_ORIGINS", "http://localhost:3000").split(","),
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-API-Key"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "X-API-Key", "Authorization"],
     max_age=600,
 )
 

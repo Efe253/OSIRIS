@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 import requests
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
-from osiris.security import assert_safe_url
+from osiris.security import assert_safe_url, fetch_url
 
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
 
@@ -35,7 +35,9 @@ class MatrixCollector(BaseCollector):
             headers["Authorization"] = f"Bearer {cfg['access_token']}"
 
         try:
-            resp = requests.get(
+            resp = fetch_url(
+                requests,
+                "GET",
                 f"{homeserver.rstrip('/')}/_matrix/client/v3/rooms/{quote(room_id, safe='')}/messages",
                 params={"dir": "b", "limit": 50},
                 headers=headers,
@@ -43,6 +45,8 @@ class MatrixCollector(BaseCollector):
                 verify=True,
             )
             resp.raise_for_status()
+        except ValueError as exc:
+            return CollectionResult(items=[], success=False, error=f"Matrix hatası: {exc}"[:300])
         except requests.RequestException as exc:
             status = getattr(getattr(exc, "response", None), "status_code", None)
             if status in (401, 403):
@@ -75,8 +79,10 @@ class MatrixCollector(BaseCollector):
             return False
         try:
             assert_safe_url(homeserver.rstrip("/") + "/")
-            return requests.get(
-                f"{homeserver.rstrip('/')}/_matrix/client/versions", timeout=10, headers=_HEADERS, verify=True
+            return fetch_url(
+                requests, "GET",
+                f"{homeserver.rstrip('/')}/_matrix/client/versions", timeout=10, headers=_HEADERS, verify=True,
+                max_bytes=65536,
             ).status_code < 500
         except (requests.RequestException, ValueError):
             return False

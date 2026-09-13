@@ -7,7 +7,7 @@ from typing import Any
 import requests
 from bs4 import BeautifulSoup
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
-from osiris.security import safe_title
+from osiris.security import fetch_url, safe_title
 
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
 _MAX_BYTES = 2_000_000
@@ -45,9 +45,10 @@ class I2PCollector(BaseCollector):
         except ValueError as exc:
             return CollectionResult(items=[], success=False, error=str(exc))
         try:
-            resp = session.get(url, timeout=60, verify=True)
+            resp = fetch_url(session, "GET", url, timeout=60, verify=True,
+                             max_bytes=_MAX_BYTES)
             resp.raise_for_status()
-        except requests.RequestException as exc:
+        except (requests.RequestException, ValueError) as exc:
             return CollectionResult(items=[], success=False, error=str(exc)[:500])
 
         soup = BeautifulSoup(resp.text[:_MAX_BYTES], "html.parser")
@@ -66,6 +67,7 @@ class I2PCollector(BaseCollector):
         if not url or not isinstance(url, str):
             return False
         try:
-            return self._session(self.config).get(url, timeout=30, verify=True).status_code < 500
+            return fetch_url(self._session(self.config), "GET", url, timeout=30,
+                             verify=True, max_bytes=65536).status_code < 500
         except (requests.RequestException, ValueError):
             return False

@@ -482,7 +482,9 @@ Qt6 power client and Tauri lightweight client remain roadmap items (§15).
 `deploy/n8n/osiris-workflow.json`: schedule → search → collect, with `X-API-Key` headers (`{{ $env.OSIRIS_API_KEY }}` — set it on the n8n service) and timeouts.
 
 ### 14.2 FreshRSS Integration
-FreshRSS manages standard feeds; OSIRIS ingests new articles into its pipeline (reader + source in one).
+FreshRSS manages standard feeds (live). Pipeline ingestion of new FreshRSS
+articles is **planned** — currently FreshRSS runs as a standalone reader
+alongside OSIRIS.
 
 ### 14.3 Webhooks & Alerts
 Alert handlers (email/Telegram/webhook) plug into `AlertManager.register_handler`; anomaly spikes emit through the same channel.
@@ -497,7 +499,7 @@ Alert handlers (email/Telegram/webhook) plug into `AlertManager.register_handler
 | **Phase 2** | Tor, I2P, IRC/Matrix, Shodan, DNS/WHOIS, Web UI basics | ✅ Done |
 | **Phase 3** | Graph, semantic search, alerts, reports | ✅ Done |
 | **Phase 4** | Automation, blockchain, JWT, STIX, hardening, TLS | ✅ Done |
-| **Phase 5.1** | Test coverage ≥80% (CI gate) | ✅ Done (91%) |
+| **Phase 5.1** | Test coverage ≥80% (CI gate) | ✅ Done (90%) |
 | **Phase 5.2** | RBAC + graph persistence + anomaly detection | ✅ Done |
 | **Next** | 2FA, Vault secrets, PDF reports, Qt/Tauri clients, :443 cutover, full docs polish | Planned |
 

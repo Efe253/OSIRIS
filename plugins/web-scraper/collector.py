@@ -7,7 +7,7 @@ from typing import Any
 import requests
 from bs4 import BeautifulSoup
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
-from osiris.security import assert_safe_url, safe_title
+from osiris.security import fetch_url, safe_title
 
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted; contact: admin@localhost)"}
 _MAX_BYTES = 2_000_000
@@ -24,14 +24,10 @@ class WebScraperCollector(BaseCollector):
         if not url or not isinstance(url, str):
             return CollectionResult(items=[], success=False, error="url gerekli")
         try:
-            assert_safe_url(url)
-        except ValueError as exc:
-            return CollectionResult(items=[], success=False, error=f"Güvensiz URL: {exc}")
-
-        try:
-            resp = requests.get(url, timeout=30, headers=_HEADERS, verify=True)
+            resp = fetch_url(requests, "GET", url, timeout=30, headers=_HEADERS,
+                             verify=True, max_bytes=_MAX_BYTES)
             resp.raise_for_status()
-        except requests.RequestException as exc:
+        except (requests.RequestException, ValueError) as exc:
             return CollectionResult(items=[], success=False, error=str(exc)[:500])
 
         text = resp.text[:_MAX_BYTES]
@@ -65,9 +61,9 @@ class WebScraperCollector(BaseCollector):
         if not url or not isinstance(url, str):
             return False
         try:
-            assert_safe_url(url)
-            return requests.head(
-                url, timeout=10, headers=_HEADERS, verify=True, allow_redirects=True
+            return fetch_url(
+                requests, "HEAD", url, timeout=10, headers=_HEADERS,
+                verify=True, max_bytes=0,
             ).status_code < 500
         except (requests.RequestException, ValueError):
             return False

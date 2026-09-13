@@ -7,7 +7,7 @@ from typing import Any
 import feedparser
 import requests
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
-from osiris.security import assert_safe_url
+from osiris.security import fetch_url
 
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
 _MAX_BYTES = 2_000_000
@@ -24,14 +24,10 @@ class RssCollector(BaseCollector):
         if not feed_url or not isinstance(feed_url, str):
             return CollectionResult(items=[], success=False, error="feed_url gerekli")
         try:
-            assert_safe_url(feed_url)
-        except ValueError as exc:
-            return CollectionResult(items=[], success=False, error=f"Güvensiz URL: {exc}")
-
-        try:
-            resp = requests.get(feed_url, timeout=30, headers=_HEADERS, verify=True)
+            resp = fetch_url(requests, "GET", feed_url, timeout=30, headers=_HEADERS,
+                             verify=True, max_bytes=_MAX_BYTES)
             resp.raise_for_status()
-        except requests.RequestException as exc:
+        except (requests.RequestException, ValueError) as exc:
             return CollectionResult(items=[], success=False, error=str(exc)[:500])
 
         parsed = feedparser.parse(resp.content[:_MAX_BYTES])
@@ -61,9 +57,9 @@ class RssCollector(BaseCollector):
         if not feed_url or not isinstance(feed_url, str):
             return False
         try:
-            assert_safe_url(feed_url)
-            return requests.head(
-                feed_url, timeout=10, headers=_HEADERS, verify=True, allow_redirects=True
+            return fetch_url(
+                requests, "HEAD", feed_url, timeout=10, headers=_HEADERS,
+                verify=True, max_bytes=0,
             ).status_code < 500
         except (requests.RequestException, ValueError):
             return False

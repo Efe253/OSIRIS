@@ -7,7 +7,7 @@ from typing import Any
 
 import requests
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
-from osiris.security import assert_safe_url
+from osiris.security import assert_safe_url, fetch_url
 
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
 _ADDRESS_RE = re.compile(r"^[A-Za-z0-9]{20,100}$")
@@ -21,12 +21,13 @@ class BlockchainCollector(BaseCollector):
     network_type = "blockchain"
 
     def _rpc(self, rpc_url: str, method: str, params: list) -> Any:
-        resp = requests.post(
-            rpc_url,
+        resp = fetch_url(
+            requests, "POST", rpc_url,
             json={"jsonrpc": "2.0", "method": method, "params": params, "id": 1},
             timeout=30,
             headers=_HEADERS,
             verify=True,
+            max_bytes=1_000_000,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -46,12 +47,14 @@ class BlockchainCollector(BaseCollector):
         )]
 
     def _btc_address(self, address: str) -> list[CollectedItem]:
-        resp = requests.get(
-            f"{_BLOCKSTREAM_BASE}/address/{address}",
-            timeout=30, headers=_HEADERS, verify=True,
+        resp = fetch_url(
+            requests, "GET", f"{_BLOCKSTREAM_BASE}/address/{address}",
+            timeout=30, headers=_HEADERS, verify=True, max_bytes=1_000_000,
         )
         resp.raise_for_status()
         info = resp.json()
+        if not isinstance(info, dict):
+            raise ValueError("Blockstream: beklenmeyen yanıt")
         funded = info.get("chain_stats", {}).get("funded_txo_sum", 0)
         spent = info.get("chain_stats", {}).get("spent_txo_sum", 0)
         txs = info.get("chain_stats", {}).get("tx_count", 0)
@@ -110,13 +113,13 @@ class BlockchainCollector(BaseCollector):
         if not rpc_url or not isinstance(rpc_url, str):
             return False
         try:
-            assert_safe_url(rpc_url)
-            resp = requests.post(
-                rpc_url,
+            resp = fetch_url(
+                requests, "POST", rpc_url,
                 json={"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 1},
                 timeout=10,
                 headers=_HEADERS,
                 verify=True,
+                max_bytes=65536,
             )
             return resp.status_code < 500
         except (requests.RequestException, ValueError):

@@ -320,6 +320,9 @@ class ProcessingPipeline:
     def _insert_item(self, cur: Any, item: dict[str, Any], content_hash: str,
                      tags: list[str], embedding: list[float] | None) -> str | None:
         """Item satırını yazar. Boyut uyumsuz embedding'i atlayıp vektörsüz yazar."""
+        published = item.get("published_at") or ""
+        if hasattr(published, "isoformat"):  # datetime/date nesnesi gelebilir
+            published = published.isoformat()
         base_params: tuple = (
             item.get("source_id") or "",
             (item.get("raw_content") or "")[:_MAX_CONTENT_CHARS],
@@ -327,7 +330,7 @@ class ProcessingPipeline:
             (item.get("url") or "")[:2048],
             (item.get("title") or "")[:500],
             (item.get("language") or "unknown")[:5],
-            item.get("published_at") or "",
+            str(published)[:100],
             content_hash,
             json.dumps(item.get("metadata") or {}, ensure_ascii=False),
             tags,

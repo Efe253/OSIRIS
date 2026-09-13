@@ -477,7 +477,9 @@ Qt6 güç istemcisi ve Tauri hafif istemcisi yol haritasındadır (§15).
 `deploy/n8n/osiris-workflow.json`: zamanlayıcı → arama → toplama; `X-API-Key` başlıkları (`{{ $env.OSIRIS_API_KEY }}` — n8n servisinde tanımlı olmalı) ve zaman aşımlı.
 
 ### 14.2 FreshRSS Entegrasyonu
-FreshRSS standart akışları yönetir; OSIRIS yeni makaleleri pipeline'a alır (okuyucu + kaynak bir arada).
+FreshRSS standart akışları yönetir (canlı). Yeni makalelerin pipeline'a
+alınması **planlıdır** — şu an FreshRSS, OSIRIS yanında bağımsız okuyucu
+olarak çalışır.
 
 ### 14.3 Webhook'lar & Uyarılar
 Uyarı işleyiciler (e-posta/Telegram/webhook) `AlertManager.register_handler`'a takılır; anomali sıçramaları aynı kanaldan gider.
@@ -492,7 +494,7 @@ Uyarı işleyiciler (e-posta/Telegram/webhook) `AlertManager.register_handler`'a
 | **Faz 2** | Tor, I2P, IRC/Matrix, Shodan, DNS/WHOIS, Web UI temelleri | ✅ Bitti |
 | **Faz 3** | Graf, semantik arama, uyarılar, raporlar | ✅ Bitti |
 | **Faz 4** | Otomasyon, blockchain, JWT, STIX, sertleştirme, TLS | ✅ Bitti |
-| **Faz 5.1** | Test kapsamı ≥%80 (CI eşiği) | ✅ Bitti (%91) |
+| **Faz 5.1** | Test kapsamı ≥%80 (CI eşiği) | ✅ Bitti (%90) |
 | **Faz 5.2** | RBAC + graf kalıcılığı + anomali tespiti | ✅ Bitti |
 | **Sıradaki** | 2FA, Vault sırları, PDF raporlar, Qt/Tauri istemcileri, :443 geçişi, doküman cilası | Planlı |
 

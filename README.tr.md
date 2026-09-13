@@ -79,6 +79,9 @@ Katmanlar, veri akışı ve güvenlik modeli için bkz. [docs/ARCHITECTURE.tr.md
 # Ortam şablonunu kopyalayıp sırları doldurun
 cp .env.example .env
 
+# TLS bootstrap sertifikasını üretin (yalnızca taze kurulum)
+./deploy/nginx/make-certs.sh
+
 # Altyapıyı başlat (PostgreSQL, Redis, MinIO, N8N, FreshRSS, Nginx)
 docker compose up -d
 

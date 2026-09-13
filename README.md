@@ -79,6 +79,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for layers, data flow, and the 
 # Copy environment template and fill in secrets
 cp .env.example .env
 
+# Generate the TLS bootstrap certificate (fresh installs only)
+./deploy/nginx/make-certs.sh
+
 # Start infrastructure (PostgreSQL, Redis, MinIO, N8N, FreshRSS, Nginx)
 docker compose up -d
 

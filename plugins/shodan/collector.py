@@ -6,6 +6,7 @@ from typing import Any
 
 import requests
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
+from osiris.security import fetch_url
 
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
 
@@ -25,7 +26,9 @@ class ShodanCollector(BaseCollector):
             return CollectionResult(items=[], success=False, error="query çok uzun")
 
         try:
-            resp = requests.get(
+            resp = fetch_url(
+                requests,
+                "GET",
                 "https://api.shodan.io/shodan/host/search",
                 params={"key": str(api_key), "query": query},
                 timeout=30,
@@ -33,6 +36,8 @@ class ShodanCollector(BaseCollector):
                 verify=True,
             )
             resp.raise_for_status()
+        except ValueError as exc:
+            return CollectionResult(items=[], success=False, error=f"Shodan hatası: {exc}"[:300])
         except requests.RequestException as exc:
             # API anahtarını hataya yazma
             status = getattr(getattr(exc, "response", None), "status_code", None)

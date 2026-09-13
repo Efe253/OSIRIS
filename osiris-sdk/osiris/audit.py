@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class _Cursor(Protocol):
@@ -67,8 +70,8 @@ def append_audit(conn: _Connection, user_id: str | None, action: str,
         # kilit; desteklemeyen sürücülerde sessizce atlanır).
         try:
             cur.execute("SELECT pg_advisory_xact_lock(hashtext('osiris_audit_chain'))")
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Danışma kilidi atlandı (PG dışı?): %s", exc)
         cur.execute("SELECT hash FROM audit_logs ORDER BY id DESC LIMIT 1")
         row = cur.fetchone()
         prev_hash = row[0] if row and row[0] else "GENESIS"

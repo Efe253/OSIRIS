@@ -173,3 +173,61 @@ def mask_secret(value: str | None, keep: int = 4) -> str:
     if len(s) <= keep:
         return "***"
     return "*" * (len(s) - keep) + s[-keep:]
+
+
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+
+def fetch_url(session, method: str, url: str, *, allow_onion: bool = False,
+              timeout: int = 30, max_redirects: int = 3,
+              max_bytes: int = 2_000_000, **kwargs):
+    """Yönlendirme-denetimli HTTP istemi (redirect-SSRF korumalı).
+
+    `requests` otomatik yönlendirme takibini KAPATIR; her `Location`
+    adımını `assert_safe_url` ile yeniden doğrular. Gövde `max_bytes`
+    ile sınırlanır. `session` çağrıcının oturumudur (Tor/I2P proxy'leri
+    korunur). Dönen: tam okunmuş `requests.Response` (raise_for_status/
+    json()/text kullanılabilir).
+    """
+    from urllib.parse import urljoin
+
+    if max_redirects < 0 or max_redirects > 10:
+        raise ValueError("max_redirects 0-10 aralığında olmalı")
+    current = assert_safe_url(url, allow_onion=allow_onion)
+    hops = 0
+    while True:
+        resp = session.request(method, current, allow_redirects=False,
+                               timeout=timeout, stream=True, **kwargs)
+        location = resp.headers.get("Location") if resp is not None else None
+        if resp.status_code in _REDIRECT_STATUSES and location and hops < max_redirects:
+            hops += 1
+            resp.close()
+            nxt = urljoin(current, location.strip())
+            current = assert_safe_url(nxt, allow_onion=allow_onion)
+            # Tarayıcı kuralı: 303 her zaman GET'e döner; 301/302 POST'u GET yapar
+            if resp.status_code == 303 or (
+                resp.status_code in (301, 302) and method.upper() == "POST"
+            ):
+                method = "GET"
+            continue
+        if resp.status_code in _REDIRECT_STATUSES and location:
+            resp.close()
+            raise ValueError("Çok fazla yönlendirme")
+        # Gövdeyi bütçeyle oku (stream) ve bağlantıyı bırak
+        data = b""
+        try:
+            for chunk in resp.iter_content(65536):
+                if not chunk:
+                    continue
+                data += chunk
+                if len(data) >= max_bytes:
+                    data = data[:max_bytes]
+                    break
+        finally:
+            resp.close()
+        try:
+            resp._content = data  # noqa: SLF001 — Response'u tamamlama
+        except AttributeError:
+            pass
+        resp.url = current
+        return resp

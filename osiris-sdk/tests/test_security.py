@@ -90,3 +90,109 @@ def test_cap_list_and_mask() -> None:
     assert mask_secret(None) == "***"
     assert mask_secret("abcdef") == "**cdef"
     assert mask_secret("ab") == "***"
+
+
+class _FakeResp:
+    def __init__(self, status=200, headers=None, body=b"ok"):
+        self.status_code = status
+        self.headers = headers or {}
+        self._body = body
+        self.url = ""
+        self.closed = False
+
+    @property
+    def content(self):
+        return getattr(self, "_content", self._body)
+
+    @property
+    def text(self):
+        data = self.content
+        return data.decode("utf-8", errors="replace") if isinstance(data, bytes) else data
+
+    def iter_content(self, size):
+        yield self._body
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeSession:
+    def __init__(self, handler):
+        self.handler = handler
+        self.calls = []
+
+    def request(self, method, url, **kwargs):
+        self.calls.append((method, url))
+        return self.handler(method, url, kwargs)
+
+
+def _session_for(mapping):
+    def handler(method, url, kwargs):
+        assert kwargs.get("allow_redirects") is False
+        assert kwargs.get("stream") is True
+        return mapping(url)
+
+    return _FakeSession(handler)
+
+
+def test_fetch_url_direct() -> None:
+    from osiris.security import fetch_url
+
+    s = _session_for(lambda url: _FakeResp(200, {}, b"hello"))
+    r = fetch_url(s, "GET", "https://example.com/")
+    assert r.status_code == 200 and r.text == "hello"
+
+
+def test_fetch_url_follows_safe_redirect() -> None:
+    from osiris.security import fetch_url
+
+    def mapping(url):
+        if url == "https://example.com/a":
+            return _FakeResp(302, {"Location": "/b"})
+        return _FakeResp(200, {}, b"final")
+
+    s = _session_for(mapping)
+    r = fetch_url(s, "GET", "https://example.com/a")
+    assert r.text == "final"
+    assert [c[1] for c in s.calls] == ["https://example.com/a", "https://example.com/b"]
+
+
+def test_fetch_url_blocks_redirect_to_private() -> None:
+    import pytest
+    from osiris.security import fetch_url
+
+    s = _session_for(lambda url: _FakeResp(302, {"Location": "http://169.254.169.254/"}))
+    with pytest.raises(ValueError):
+        fetch_url(s, "GET", "https://example.com/a")
+
+
+def test_fetch_url_redirect_loop_and_body_cap() -> None:
+    import pytest
+    from osiris.security import fetch_url
+
+    s = _session_for(lambda url: _FakeResp(302, {"Location": "/loop"}))
+    with pytest.raises(ValueError, match="yönlendirme"):
+        fetch_url(s, "GET", "https://example.com/loop", max_redirects=2)
+
+    big = _session_for(lambda url: _FakeResp(200, {}, b"x" * 100))
+    r = fetch_url(big, "GET", "https://example.com/", max_bytes=10)
+    assert r.content == b"x" * 10
+
+    with pytest.raises(ValueError):
+        fetch_url(big, "GET", "https://example.com/", max_redirects=99)
+
+
+def test_fetch_url_post_becomes_get_on_303() -> None:
+    from osiris.security import fetch_url
+
+    seen = []
+
+    def mapping(url):
+        seen.append(url)
+        if len(seen) == 1:
+            return _FakeResp(303, {"Location": "/other"})
+        return _FakeResp(200, {}, b"done")
+
+    s = _session_for(mapping)
+    fetch_url(s, "POST", "https://example.com/submit")
+    assert s.calls[0][0] == "POST" and s.calls[1][0] == "GET"
