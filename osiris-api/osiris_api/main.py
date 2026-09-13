@@ -208,14 +208,14 @@ def get_collector() -> CollectorManager:
 
 
 def _audit(action: str, resource: str | None = None,
-           detail: dict[str, Any] | None = None) -> None:
+           detail: dict[str, Any] | None = None, user: str = "api") -> None:
     """Best-effort denetim kaydı (doküman §10.4). Asla isteği bozmaz."""
     try:
         import psycopg
         from osiris.audit import append_audit
 
         with psycopg.connect(DATABASE_URL, connect_timeout=3) as conn:
-            append_audit(conn, "api", action, resource, detail)
+            append_audit(conn, user, action, resource, detail)
     except Exception as exc:  # noqa: BLE001
         logger.debug("Denetim kaydı atlandı: %s", exc)
 
@@ -264,7 +264,7 @@ def issue_token(req: TokenRequest) -> dict[str, object]:
     if req.role not in ROLES:
         raise HTTPException(status_code=400, detail="Geçersiz rol")
     token = create_token("api-client", JWT_SECRET, role=req.role)
-    _audit("auth.token", None, {"role": req.role})
+    _audit("auth.token", None, {"role": req.role}, user="operator")
     return token
 
 
@@ -274,9 +274,9 @@ class ApiKeyRequest(BaseModel):
     name: str = Field(default="", max_length=200)
 
 
-@app.post("/auth/keys", dependencies=[Depends(require_admin)], tags=["Auth"],
+@app.post("/auth/keys", tags=["Auth"],
              summary="Kullanıcı anahtarı üret")
-def create_api_key(req: ApiKeyRequest) -> dict[str, str]:
+def create_api_key(req: ApiKeyRequest, ident: dict = Depends(require_admin)) -> dict[str, str]:
     """Kullanıcıya API anahtarı üretir (ham değer BİR KEZ döner)."""
     import secrets
 
@@ -314,7 +314,8 @@ def create_api_key(req: ApiKeyRequest) -> dict[str, str]:
     except Exception as exc:  # noqa: BLE001
         logger.exception("Anahtar üretilemedi")
         raise HTTPException(status_code=500, detail="Anahtar üretilemedi") from exc
-    _audit("auth.key.create", req.username, {"role": req.role, "key_id": key_id})
+    _audit("auth.key.create", req.username, {"role": req.role, "key_id": key_id},
+           user=ident["user"])
     return {"id": key_id, "api_key": raw_key, "role": req.role}
 
 
@@ -341,9 +342,9 @@ def list_api_keys() -> list[dict[str, Any]]:
         raise HTTPException(status_code=500, detail="Liste okunamadı") from exc
 
 
-@app.delete("/auth/keys/{key_id}", dependencies=[Depends(require_admin)], tags=["Auth"],
+@app.delete("/auth/keys/{key_id}", tags=["Auth"],
              summary="API anahtarı iptal et")
-def revoke_api_key(key_id: str) -> dict[str, str]:
+def revoke_api_key(key_id: str, ident: dict = Depends(require_admin)) -> dict[str, str]:
     """Anahtarı iptal eder (silmez — denetim izi kalır)."""
     key_id = _uuid_or_404(key_id, "Anahtar")
     try:
@@ -362,7 +363,7 @@ def revoke_api_key(key_id: str) -> dict[str, str]:
         raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail="İptal başarısız") from exc
-    _audit("auth.key.revoke", None, {"key_id": key_id})
+    _audit("auth.key.revoke", None, {"key_id": key_id}, user=ident["user"])
     return {"status": "revoked"}
 
 
@@ -396,24 +397,23 @@ def _db():
 
 
 @app.get("/stats", dependencies=[Depends(require_viewer)], tags=["Stats"],
-             summary="Panel sayaçları")
+         summary="Panel sayaçları")
 def stats() -> dict[str, Any]:
     """Panel için sayaçlar: kaynak/öğe/varlık/kenar/sorgu."""
+    # NOT: sorgular sabit dizgilerdir (tablo adı enterpolasyonu yok).
+    queries = {
+        "sources": "SELECT count(*) AS c FROM sources",
+        "sources_enabled": "SELECT count(*) AS c FROM sources WHERE enabled",
+        "items": "SELECT count(*) AS c FROM items",
+        "entities": "SELECT count(*) AS c FROM entities",
+        "edges": "SELECT count(*) AS c FROM graph_edges",
+        "saved_queries": "SELECT count(*) AS c FROM saved_queries",
+        "alerts": "SELECT count(*) AS c FROM saved_queries WHERE alert_enabled",
+    }
     try:
         with _db() as conn:
-            counts = {}
-            for key, table, extra in [
-                ("sources", "sources", ""),
-                ("sources_enabled", "sources", "WHERE enabled"),
-                ("items", "items", ""),
-                ("entities", "entities", ""),
-                ("edges", "graph_edges", ""),
-                ("saved_queries", "saved_queries", ""),
-                ("alerts", "saved_queries", "WHERE alert_enabled"),
-            ]:
-                counts[key] = conn.execute(
-                    f"SELECT count(*) AS c FROM {table} {extra}".rstrip()
-                ).fetchone()["c"]
+            counts = {key: conn.execute(sql).fetchone()["c"]
+                      for key, sql in queries.items()}
             latest = conn.execute(
                 "SELECT collected_at FROM items ORDER BY collected_at DESC LIMIT 1"
             ).fetchone()
@@ -496,6 +496,11 @@ def top_entities(entity_type: str | None = None,
             raise HTTPException(status_code=400, detail="Geçersiz entity_type")
         clauses.append("e.type = %s")
         params.append(entity_type)
+    # Guvenlik (bandit B608 incelemesi): SQL yalnizca SABIT parcalardan kurulur;
+    # kullanici girdisi sadece bagli parametre (%s) olarak gecer. Kanit:
+    # test_main.py::test_sql_injection_attempts (tirnak/UNION/yorum denemeleri).
+    # NOT: f-string satirina `# nosec` konulamaz (acilmamis uc-tirnak ici
+    # sozluksel olarak dizgi sayilir) — bu yorum bilerek duz yorumdur.
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     try:
         with _db() as conn:
@@ -524,9 +529,9 @@ class BatchRequest(BaseModel):
     jobs: list[BatchJob] = Field(min_length=1, max_length=10)
 
 
-@app.post("/collect/batch", dependencies=[Depends(require_analyst)], tags=["Collect"],
+@app.post("/collect/batch", tags=["Collect"],
          summary="Toplu toplama (en fazla 10 iş)")
-def collect_batch(req: BatchRequest) -> dict[str, Any]:
+def collect_batch(req: BatchRequest, ident: dict = Depends(require_analyst)) -> dict[str, Any]:
     """İşleri sırayla çalıştırır; iş başına sonuç döner (kısmi başarı mümkün)."""
     collector = get_collector()
     results = []
@@ -549,13 +554,14 @@ def collect_batch(req: BatchRequest) -> dict[str, Any]:
                         "items": len(result.items) if result.success else 0,
                         "error": result.error})
     ok_count = sum(1 for r in results if r["ok"])
-    _audit("collect.batch", None, {"jobs": len(results), "ok": ok_count})
+    _audit("collect.batch", None, {"jobs": len(results), "ok": ok_count},
+           user=ident["user"])
     return {"jobs": results, "ok": ok_count, "total": len(results)}
 
 
-@app.post("/collect", dependencies=[Depends(require_analyst)], tags=["Collect"],
+@app.post("/collect", tags=["Collect"],
              summary="Tek toplama görevi çalıştır")
-def collect(req: CollectRequest) -> dict[str, Any]:
+def collect(req: CollectRequest, ident: dict = Depends(require_analyst)) -> dict[str, Any]:
     collector = get_collector()
     if req.plugin_id not in collector.plugins:
         raise HTTPException(status_code=404, detail="Plugin bulunamadı")
@@ -566,15 +572,16 @@ def collect(req: CollectRequest) -> dict[str, Any]:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if not result.success:
-        _audit("collect.failed", req.plugin_id, {"error": result.error})
+        _audit("collect.failed", req.plugin_id, {"error": result.error},
+               user=ident["user"])
         raise HTTPException(status_code=502, detail=result.error)
-    _audit("collect", req.plugin_id, {"items": len(result.items)})
+    _audit("collect", req.plugin_id, {"items": len(result.items)}, user=ident["user"])
     return {"items": len(result.items), "metadata": result.metadata}
 
 
-@app.post("/search", dependencies=[Depends(require_viewer)], tags=["Search"],
+@app.post("/search", tags=["Search"],
              summary="Tam metin arama")
-def search(req: SearchRequest) -> list[dict[str, Any]]:
+def search(req: SearchRequest, ident: dict = Depends(require_viewer)) -> list[dict[str, Any]]:
     try:
         rows = _query.fulltext_search(req.query, req.limit)
     except ValueError as exc:
@@ -582,7 +589,8 @@ def search(req: SearchRequest) -> list[dict[str, Any]]:
     except Exception as exc:  # noqa: BLE001
         logger.exception("Arama hatası")
         raise HTTPException(status_code=500, detail="Arama başarısız") from exc
-    _audit("search", None, {"query": req.query[:200], "hits": len(rows)})
+    _audit("search", None, {"query": req.query[:200], "hits": len(rows)},
+           user=ident["user"])
     return rows
 
 
@@ -609,9 +617,9 @@ def graph() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail="Graf okunamadı") from exc
 
 
-@app.post("/graph/relation", dependencies=[Depends(require_analyst)], tags=["Graph"],
+@app.post("/graph/relation", tags=["Graph"],
              summary="Graf ilişkisi ekle (kalıcı)")
-def graph_add(req: GraphAddRequest) -> dict[str, str]:
+def graph_add(req: GraphAddRequest, ident: dict = Depends(require_analyst)) -> dict[str, str]:
     g = get_graph()
     g.add_entity(req.source)
     g.add_entity(req.target)
@@ -658,6 +666,11 @@ def list_sources(enabled: bool | None = None, plugin_id: str | None = None,
         needle = q[:200].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         clauses.append("(name ILIKE %s ESCAPE '\\' OR url ILIKE %s ESCAPE '\\')")
         params.extend([f"%{needle}%", f"%{needle}%"])
+    # Guvenlik (bandit B608 incelemesi): SQL yalnizca SABIT parcalardan kurulur;
+    # kullanici girdisi sadece bagli parametre (%s) olarak gecer. Kanit:
+    # test_main.py::test_sql_injection_attempts (tirnak/UNION/yorum denemeleri).
+    # NOT: f-string satirina `# nosec` konulamaz (acilmamis uc-tirnak ici
+    # sozluksel olarak dizgi sayilir) — bu yorum bilerek duz yorumdur.
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     try:
         with _db() as conn:
@@ -675,9 +688,9 @@ def list_sources(enabled: bool | None = None, plugin_id: str | None = None,
         raise HTTPException(status_code=500, detail="Kaynaklar okunamadı") from exc
 
 
-@app.post("/sources", dependencies=[Depends(require_analyst)], tags=["Sources"],
+@app.post("/sources", tags=["Sources"],
              summary="Kaynak oluştur")
-def create_source(req: SourceRequest) -> dict[str, str]:
+def create_source(req: SourceRequest, ident: dict = Depends(require_analyst)) -> dict[str, str]:
     if req.network_type not in _VALID_NETWORKS:
         raise HTTPException(status_code=400, detail="Geçersiz network_type")
     if req.plugin_id not in get_collector().plugins:
@@ -699,15 +712,16 @@ def create_source(req: SourceRequest) -> dict[str, str]:
                  json.dumps({"config": req.config}, ensure_ascii=False)),
             ).fetchone()
             conn.commit()
-        _audit("source.create", req.name, {"plugin": req.plugin_id})
+        _audit("source.create", req.name, {"plugin": req.plugin_id},
+               user=ident["user"])
         return {"id": row["id"]}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail="Kaynak oluşturulamadı") from exc
 
 
-@app.delete("/sources/{source_id}", dependencies=[Depends(require_analyst)], tags=["Sources"],
+@app.delete("/sources/{source_id}", tags=["Sources"],
              summary="Kaynak sil")
-def delete_source(source_id: str) -> dict[str, str]:
+def delete_source(source_id: str, ident: dict = Depends(require_analyst)) -> dict[str, str]:
     source_id = _uuid_or_404(source_id, "Kaynak")
     try:
         with _db() as conn:
@@ -716,7 +730,7 @@ def delete_source(source_id: str) -> dict[str, str]:
                 if cur.rowcount == 0:
                     raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
             conn.commit()
-        _audit("source.delete", None, {"id": source_id})
+        _audit("source.delete", None, {"id": source_id}, user=ident["user"])
         return {"status": "deleted"}
     except HTTPException:
         raise
@@ -724,16 +738,16 @@ def delete_source(source_id: str) -> dict[str, str]:
         raise HTTPException(status_code=500, detail="Kaynak silinemedi") from exc
 
 
-@app.post("/sources/{source_id}/collect", dependencies=[Depends(require_analyst)], tags=["Sources"],
+@app.post("/sources/{source_id}/collect", tags=["Sources"],
          summary="Kayıtlı kaynağı çalıştır")
-def collect_source(source_id: str) -> dict[str, Any]:
+def collect_source(source_id: str, ident: dict = Depends(require_analyst)) -> dict[str, Any]:
     """Kayıtlı kaynağı tek seferlik çalıştırır (sağlık takibi dahil)."""
     source_id = _uuid_or_404(source_id, "Kaynak")
     try:
         with _db() as conn:
             row = conn.execute(
                 """
-                SELECT plugin_id, url, metadata FROM sources WHERE id::text = %s
+                SELECT plugin_id, url, enabled, metadata FROM sources WHERE id::text = %s
                 """,
                 (source_id,),
             ).fetchone()
@@ -744,6 +758,8 @@ def collect_source(source_id: str) -> dict[str, Any]:
         raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail="Kaynak okunamadı") from exc
+    if not row.get("enabled", True):
+        raise HTTPException(status_code=409, detail="Kaynak devre dışı")
     meta = row.get("metadata") or {}
     if isinstance(meta, str):
         try:
@@ -764,7 +780,8 @@ def collect_source(source_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if not result.success:
         raise HTTPException(status_code=502, detail=result.error)
-    _audit("source.collect", row["plugin_id"], {"id": source_id, "items": len(result.items)})
+    _audit("source.collect", row["plugin_id"],
+           {"id": source_id, "items": len(result.items)}, user=ident["user"])
     return {"items": len(result.items), "metadata": result.metadata}
 
 
@@ -862,10 +879,26 @@ def test_alerts(req: AlertTestRequest) -> list[dict[str, Any]]:
                 """
             ).fetchall()
         manager = AlertManager(redis_url=None)
-        return manager.check_item(
+        triggered = manager.check_item(
             {"cleaned_content": req.text, "title": req.title},
             [dict(q) for q in queries],
         )
+        if triggered:
+            try:
+                with _db() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE saved_queries SET last_triggered_at = NOW()
+                            WHERE id::text = ANY(%s)
+                            """,
+                            ([t["query_id"] for t in triggered
+                              if t.get("query_id")],),
+                        )
+                    conn.commit()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("last_triggered yazılamadı: %s", exc)
+        return triggered
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail="Eşleşme başarısız") from exc
 
@@ -895,7 +928,7 @@ def report_markdown(req: MarkdownReportRequest) -> dict[str, str]:
 def run() -> None:
     import uvicorn
 
-    uvicorn.run("osiris_api.main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("osiris_api.main:app", host="0.0.0.0", port=8000, reload=False)  # nosec B104 -- konteyner ici dinleme; host baglama compose'da localhost
 
 
 if __name__ == "__main__":

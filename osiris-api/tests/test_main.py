@@ -428,3 +428,53 @@ def test_collect_batch(monkeypatch) -> None:
     assert c.post("/collect/batch", json={"jobs": []}, headers=auth()).status_code == 422
     many = {"jobs": [{"plugin_id": "ok", "config": {}}] * 11}
     assert c.post("/collect/batch", json=many, headers=auth()).status_code == 422
+
+
+def test_sql_injection_attempts_are_inert(monkeypatch) -> None:
+    """B608 incelemesi kanıtı: girdi yalnızca bağlı parametredir, yapı sabittir."""
+    c = make_client(monkeypatch)
+    seen: list[tuple[str, object]] = []
+
+    class RecDB(FakeDB):
+        def execute(self, q, p=None):
+            seen.append((q, p))
+            return self
+
+    monkeypatch.setattr(api_main, "_db", lambda: RecDB(fetchall=[]))
+    evil = "' OR '1'='1' -- ; DROP TABLE sources; /*"
+    assert c.get("/sources", params={"q": evil}, headers=auth()).status_code == 200
+    assert c.get("/sources", params={"plugin_id": "x'; DROP TABLE--"}, headers=auth()).status_code == 200
+    # Yapı: tek SELECT, tek WHERE; girdi yalnızca parametrede
+    for sql, _params in seen:
+        assert sql.strip().upper().startswith("SELECT")
+        assert sql.count(";") == 0
+        assert "DROP TABLE" not in sql.upper()
+    assert any(evil in str(p) for _, p in seen)  # girdi parametrede taşındı
+    # UNION denemesi tablo dökemez (boş sonuç, hata yok)
+    r = c.get("/entities/top", params={"entity_type": "email"}, headers=auth())
+    assert r.status_code == 200
+
+
+def test_disabled_source_conflict_and_audit_user(monkeypatch) -> None:
+    c = make_client(monkeypatch)
+    patch_db(monkeypatch, fetchone={"plugin_id": "rss", "url": "u",
+                                    "enabled": False, "metadata": {}})
+    r = c.post("/sources/12345678-1234-1234-1234-123456789abc/collect",
+               headers=auth())
+    assert r.status_code == 409
+
+    calls = []
+    monkeypatch.setattr(api_main, "_audit",
+                        lambda *a, **k: calls.append((a, k)))
+    patch_db(monkeypatch, fetchone={"c": 1},
+               fetchall=[{"collected_at": None}])
+    c.get("/stats", headers=auth())
+    assert calls == []  # stats denetlenmez
+    from osiris_api.auth import create_token
+
+    viewer = create_token("gozlemci", "test-jwt-secret", role="viewer")["access_token"]
+    monkeypatch.setattr(QueryEngine, "fulltext_search",
+                        lambda self, q, limit=20: [])
+    c.post("/search", json={"query": "x"},
+           headers={"Authorization": f"Bearer {viewer}"})
+    assert calls and calls[-1][1].get("user") == "gozlemci"
