@@ -13,7 +13,6 @@ from typing import Any
 import redis
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-
 from osiris.plugin import BaseCollector, CollectionResult
 
 logger = logging.getLogger(__name__)

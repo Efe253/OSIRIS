@@ -6,7 +6,6 @@ from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
-
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
 from osiris.security import safe_title
 

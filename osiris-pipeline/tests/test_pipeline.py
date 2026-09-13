@@ -1,7 +1,6 @@
 """Processing Pipeline testleri."""
 
 import pytest
-
 from osiris_pipeline.pipeline import ProcessingPipeline
 
 

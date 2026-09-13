@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import requests
-
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
 
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}

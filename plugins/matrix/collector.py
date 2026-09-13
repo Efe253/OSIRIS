@@ -6,7 +6,6 @@ from typing import Any
 from urllib.parse import quote
 
 import requests
-
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
 from osiris.security import assert_safe_url
 

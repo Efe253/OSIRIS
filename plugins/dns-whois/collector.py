@@ -7,7 +7,6 @@ from typing import Any
 
 import dns.exception
 import dns.resolver
-
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
 from osiris.security import sanitize_domain, sanitize_hostname
 
@@ -78,7 +77,7 @@ class DnsWhoisCollector(BaseCollector):
             while len(data) < 50_000:
                 try:
                     chunk = sock.recv(4096)
-                except socket.timeout:
+                except TimeoutError:
                     break
                 if not chunk:
                     break

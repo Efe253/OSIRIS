@@ -12,11 +12,10 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-
 from osiris_collector.manager import CollectorManager
 from osiris_graph.engine import GraphEngine
 from osiris_query.engine import QueryEngine
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 

@@ -52,7 +52,7 @@ class IrcCollector(BaseCollector):
                 while time.monotonic() < deadline and len(items) < 200:
                     try:
                         data = sock.recv(4096).decode(errors="replace")
-                    except socket.timeout:
+                    except TimeoutError:
                         break
                     if not data:
                         break
@@ -71,7 +71,7 @@ class IrcCollector(BaseCollector):
                                     metadata={"server": server, "protocol": "irc"},
                                 )
                             )
-            except socket.timeout:
+            except TimeoutError:
                 pass
             return CollectionResult(items=items, metadata={"server": server})
         except OSError as exc:
