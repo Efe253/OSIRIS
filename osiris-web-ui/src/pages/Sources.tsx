@@ -41,13 +41,21 @@ export default function Sources() {
   }, []);
 
   const schema = plugins.find((p) => p.id === pluginId)?.config_schema ?? {};
+  const urlLikeKeys = ["url", "feed_url", "endpoint", "domain"];
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy("create");
     setError(null);
     try {
-      await post("/sources", { name, plugin_id: pluginId, url, config: fields });
+      // Üstteki URL kutusu, şemadaki url/feed_url/endpoint/domain alanlarını besler
+      const merged: Record<string, string> = { ...fields };
+      if (url.trim()) {
+        for (const k of urlLikeKeys) {
+          if (k in schema && !merged[k]?.trim()) merged[k] = url.trim();
+        }
+      }
+      await post("/sources", { name, plugin_id: pluginId, url, config: merged });
       setShowAdd(false);
       setName("");
       setUrl("");
@@ -117,7 +125,7 @@ export default function Sources() {
                 value={fields[key] ?? ""}
                 onChange={(e) => setFields((f) => ({ ...f, [key]: e.target.value }))}
                 placeholder={spec.default !== undefined ? `varsayılan: ${String(spec.default)}` : ""}
-                required={!!spec.required && key !== "url" && key !== "feed_url" && key !== "endpoint" && key !== "domain"}
+                required={!!spec.required && !(url.trim() && urlLikeKeys.includes(key))}
                 className={inputCls}
               />
             </div>

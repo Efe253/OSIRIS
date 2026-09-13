@@ -1,4 +1,5 @@
 -- OSIRIS — Veritabanı şeması (Faz 1)
+-- Tekrar çalıştırılabilir (idempotent): tüm nesneler IF NOT EXISTS korumalı.
 -- PostgreSQL 16 + pgvector + TimescaleDB
 -- Bkz. doküman §7.1 ve §9
 
@@ -20,12 +21,16 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ============================================================
 -- Kaynaklar (sources)
 -- ============================================================
-CREATE TYPE network_type AS ENUM (
-    'www', 'tor', 'i2p', 'p2p', 'freenet', 'zeronet', 'irc',
-    'matrix', 'rss', 'api', 'blockchain', 'sdr', 'custom'
-);
+DO $$
+BEGIN
+    CREATE TYPE network_type AS ENUM (    'www', 'tor', 'i2p', 'p2p', 'freenet', 'zeronet', 'irc',
+    'matrix', 'rss', 'api', 'blockchain', 'sdr', 'custom');
+EXCEPTION WHEN duplicate_object THEN
+    RAISE NOTICE 'type exists: %', 'network_type';
+END
+$$;
 
-CREATE TABLE sources (
+CREATE TABLE IF NOT EXISTS sources (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            TEXT NOT NULL,
     url             TEXT,
@@ -46,14 +51,14 @@ CREATE TABLE sources (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_sources_network_type ON sources (network_type);
-CREATE INDEX idx_sources_plugin_id   ON sources (plugin_id);
-CREATE INDEX idx_sources_enabled     ON sources (enabled);
+CREATE INDEX IF NOT EXISTS idx_sources_network_type ON sources (network_type);
+CREATE INDEX IF NOT EXISTS idx_sources_plugin_id   ON sources (plugin_id);
+CREATE INDEX IF NOT EXISTS idx_sources_enabled     ON sources (enabled);
 
 -- ============================================================
 -- Toplanan veri birimleri (items)
 -- ============================================================
-CREATE TABLE items (
+CREATE TABLE IF NOT EXISTS items (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_id       UUID REFERENCES sources(id) ON DELETE CASCADE,
     raw_content     TEXT,
@@ -69,21 +74,25 @@ CREATE TABLE items (
     tags            TEXT[]
 );
 
-CREATE INDEX idx_items_source_id     ON items (source_id);
-CREATE INDEX idx_items_collected_at  ON items (collected_at);
-CREATE INDEX idx_items_language      ON items (language);
-CREATE INDEX idx_items_embedding     ON items USING hnsw (embedding vector_cosine_ops);
-CREATE INDEX idx_items_content_fts   ON items USING gin (to_tsvector('simple', cleaned_content));
+CREATE INDEX IF NOT EXISTS idx_items_source_id     ON items (source_id);
+CREATE INDEX IF NOT EXISTS idx_items_collected_at  ON items (collected_at);
+CREATE INDEX IF NOT EXISTS idx_items_language      ON items (language);
+CREATE INDEX IF NOT EXISTS idx_items_embedding     ON items USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_items_content_fts   ON items USING gin (to_tsvector('simple', cleaned_content));
 
 -- ============================================================
 -- Çıkarılan varlıklar (entities)
 -- ============================================================
-CREATE TYPE entity_type AS ENUM (
-    'person', 'org', 'location', 'ip', 'domain', 'email',
-    'phone', 'crypto_address', 'hash', 'username', 'cve', 'custom'
-);
+DO $$
+BEGIN
+    CREATE TYPE entity_type AS ENUM (    'person', 'org', 'location', 'ip', 'domain', 'email',
+    'phone', 'crypto_address', 'hash', 'username', 'cve', 'custom');
+EXCEPTION WHEN duplicate_object THEN
+    RAISE NOTICE 'type exists: %', 'entity_type';
+END
+$$;
 
-CREATE TABLE entities (
+CREATE TABLE IF NOT EXISTS entities (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type             entity_type NOT NULL,
     value            TEXT NOT NULL,
@@ -94,14 +103,14 @@ CREATE TABLE entities (
     metadata         JSONB
 );
 
-CREATE INDEX idx_entities_type  ON entities (type);
-CREATE INDEX idx_entities_value ON entities (value);
-CREATE UNIQUE INDEX idx_entities_type_value ON entities (type, value);
+CREATE INDEX IF NOT EXISTS idx_entities_type  ON entities (type);
+CREATE INDEX IF NOT EXISTS idx_entities_value ON entities (value);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_type_value ON entities (type, value);
 
 -- ============================================================
 -- Varlık-Veri ilişkisi (item_entities)
 -- ============================================================
-CREATE TABLE item_entities (
+CREATE TABLE IF NOT EXISTS item_entities (
     item_id       UUID REFERENCES items(id) ON DELETE CASCADE,
     entity_id     UUID REFERENCES entities(id) ON DELETE CASCADE,
     mention_count INTEGER NOT NULL DEFAULT 1,
@@ -112,7 +121,7 @@ CREATE TABLE item_entities (
 -- ============================================================
 -- Varlıklar arası ilişkiler (entity_relations) — graf kenarları
 -- ============================================================
-CREATE TABLE entity_relations (
+CREATE TABLE IF NOT EXISTS entity_relations (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_entity_id UUID REFERENCES entities(id) ON DELETE CASCADE,
     target_entity_id UUID REFERENCES entities(id) ON DELETE CASCADE,
@@ -123,15 +132,21 @@ CREATE TABLE entity_relations (
     last_seen_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_entity_relations_source ON entity_relations (source_entity_id);
-CREATE INDEX idx_entity_relations_target ON entity_relations (target_entity_id);
+CREATE INDEX IF NOT EXISTS idx_entity_relations_source ON entity_relations (source_entity_id);
+CREATE INDEX IF NOT EXISTS idx_entity_relations_target ON entity_relations (target_entity_id);
 
 -- ============================================================
 -- Kayıtlı sorgular & uyarılar (saved_queries)
 -- ============================================================
-CREATE TYPE query_type AS ENUM ('fts', 'semantic', 'regex', 'entity', 'graph');
+DO $$
+BEGIN
+    CREATE TYPE query_type AS ENUM ('fts', 'semantic', 'regex', 'entity', 'graph');
+EXCEPTION WHEN duplicate_object THEN
+    RAISE NOTICE 'type exists: %', 'query_type';
+END
+$$;
 
-CREATE TABLE saved_queries (
+CREATE TABLE IF NOT EXISTS saved_queries (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name             TEXT,
     query_text       TEXT,
@@ -144,7 +159,7 @@ CREATE TABLE saved_queries (
 -- ============================================================
 -- Denetim logları (audit_logs) — append-only, hash zincirli
 -- ============================================================
-CREATE TABLE audit_logs (
+CREATE TABLE IF NOT EXISTS audit_logs (
     id          BIGSERIAL PRIMARY KEY,
     ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     user_id     TEXT,
@@ -158,7 +173,7 @@ CREATE TABLE audit_logs (
 -- ============================================================
 -- Zaman serisi ölçümleri (TimescaleDB hypertable)
 -- ============================================================
-CREATE TABLE source_metrics (
+CREATE TABLE IF NOT EXISTS source_metrics (
     time        TIMESTAMPTZ NOT NULL,
     source_id   UUID REFERENCES sources(id) ON DELETE CASCADE,
     response_ms INTEGER,

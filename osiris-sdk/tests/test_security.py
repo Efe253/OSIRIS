@@ -196,3 +196,15 @@ def test_fetch_url_post_becomes_get_on_303() -> None:
     s = _session_for(mapping)
     fetch_url(s, "POST", "https://example.com/submit")
     assert s.calls[0][0] == "POST" and s.calls[1][0] == "GET"
+
+
+def test_obfuscated_loopback_blocked() -> None:
+    """Ondalık/hex/sekizlik loopback yazımları da engellenmeli."""
+    import pytest
+    from osiris.security import assert_safe_url, is_blocked_host
+
+    assert is_blocked_host("2130706433")  # 127.0.0.1
+    assert is_blocked_host("0x7f.0.0.1")
+    for url in ["http://2130706433/", "http://0x7f.0.0.1/", "http://0177.0.0.1/"]:
+        with pytest.raises(ValueError):
+            assert_safe_url(url)

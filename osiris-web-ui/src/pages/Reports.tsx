@@ -9,7 +9,7 @@ export default function Reports() {
   const [title, setTitle] = useState("");
   const [scope, setScope] = useState("");
   const [summary, setSummary] = useState("");
-  const [findingsText, setFindingsText] = useState("Bulgu başlığı | Açıklama (satır başına bir bulgu)");
+  const [findingsText, setFindingsText] = useState("");
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -60,7 +60,7 @@ export default function Reports() {
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Başlık *" required className={inputCls} />
         <input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="Kapsam" className={inputCls} />
         <textarea value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="Özet" className={areaCls} />
-        <textarea value={findingsText} onChange={(e) => setFindingsText(e.target.value)} placeholder="Bulgular" className={areaCls} />
+        <textarea value={findingsText} onChange={(e) => setFindingsText(e.target.value)} placeholder="Bulgu başlığı | Açıklama (satır başına bir bulgu)" className={areaCls} />
         <button disabled={busy} className="rounded-lg bg-osiris-accent/20 px-4 py-2 text-sm font-semibold text-osiris-accent disabled:opacity-40">
           {busy ? "Üretiliyor..." : "Rapor Üret"}
         </button>

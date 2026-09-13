@@ -67,7 +67,7 @@ class I2PCollector(BaseCollector):
         if not url or not isinstance(url, str):
             return False
         try:
-            return fetch_url(self._session(self.config), "GET", url, timeout=30,
-                             verify=True, max_bytes=65536).status_code < 500
+            return fetch_url(self._session(self.config), "HEAD", url, timeout=30,
+                             verify=True, max_bytes=0).status_code < 500
         except (requests.RequestException, ValueError):
             return False

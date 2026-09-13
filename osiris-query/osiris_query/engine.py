@@ -39,7 +39,7 @@ class QueryEngine:
 
     @staticmethod
     def _validate_query(query: str) -> str:
-        if not query or not query.strip():
+        if not isinstance(query, str) or not query.strip():
             raise ValueError("query boş olamaz")
         q = query.strip()
         if len(q) > 500:
@@ -92,7 +92,7 @@ class QueryEngine:
         """Varlık bazlı arama."""
         if entity_type not in _VALID_ENTITY_TYPES:
             raise ValueError(f"Geçersiz entity_type: {entity_type!r}")
-        if not value or len(value) > 500:
+        if not isinstance(value, str) or not value.strip() or len(value) > 500:
             raise ValueError("value geçersiz")
         limit = self._validate_limit(limit)
         # ILIKE jokerlerini etkisizleştir

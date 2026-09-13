@@ -64,6 +64,8 @@ class UsernameSearchCollector(BaseCollector):
                              verify=True, max_bytes=500_000)
         except (requests.RequestException, ValueError):
             return None  # erişilemez = bilinmiyor, sessiz geç
+        finally:
+            session.close()
         check = rule["check_type"]
         found = False
         if check == "status_code":

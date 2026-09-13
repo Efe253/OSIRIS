@@ -22,5 +22,8 @@ dependencies = [
 # pip install "osiris-pipeline[embedding]"
 embedding = ["sentence-transformers>=2.2"]
 
+[project.scripts]
+osiris-pipeline = "osiris_pipeline.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["osiris_pipeline*"]

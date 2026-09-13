@@ -20,6 +20,23 @@ _MAX_QUERY_TEXT = 500
 _MAX_QUERIES_PER_ITEM = 100
 
 
+def _clamp_int(value: Any, lo: int, hi: int, default: int) -> int:
+    try:
+        return max(lo, min(int(value), hi))
+    except (TypeError, ValueError):
+        return default
+
+
+def _clamp_float(value: Any, lo: float, hi: float, default: float) -> float:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(v):
+        return default
+    return max(lo, min(v, hi))
+
+
 class AlertManager:
     """Kayıtlı sorguları yeni veriyle eşleştirir ve uyarı kanallarına iletir."""
 
@@ -34,13 +51,13 @@ class AlertManager:
         # redis_url=None → yayın yapma (test/offline modu), handler'lar yine çalışır
         self._redis_url = redis_url
         self._redis: redis.Redis | None = None
-        self.channel = channel
+        self.channel = str(channel)[:200]
         self._handlers: list[Callable[[dict[str, Any]], None]] = []
         self._muted: set[str] = set()
         # Anomali bazı: metrik adı → kayan pencere (yalnızca bellek-içi)
-        self._anomaly_window = max(10, min(int(anomaly_window), 10_000))
-        self._anomaly_threshold = max(0.5, min(float(anomaly_threshold), 10.0))
-        self._anomaly_min_samples = max(5, min(int(anomaly_min_samples), 1000))
+        self._anomaly_window = _clamp_int(anomaly_window, 10, 10_000, 100)
+        self._anomaly_threshold = _clamp_float(anomaly_threshold, 0.5, 10.0, 3.0)
+        self._anomaly_min_samples = _clamp_int(anomaly_min_samples, 5, 1000, 10)
         self._baselines: dict[str, deque[float]] = defaultdict(
             lambda: deque(maxlen=self._anomaly_window)
         )
@@ -80,7 +97,8 @@ class AlertManager:
             needle = str(query.get("query_text") or "").strip().lower()[:_MAX_QUERY_TEXT]
             if needle and (needle in content or needle in title):
                 alert = {
-                    "query_id": query.get("id"),
+                    "kind": "match",
+                    "query_id": str(query.get("id") or "")[:200],
                     "query_name": str(query.get("name") or "")[:200],
                     "item_id": item.get("id"),
                     "matched": needle[:200],
@@ -126,11 +144,13 @@ class AlertManager:
         if not anomalous:
             return None
         alert = {
+            "kind": "anomaly",
             "metric": str(name)[:200],
             "value": v,
             "mean": mean,
             "stdev": stdev,
-            "z_score": z,
+            # Infinity katı JSON üretir; sonlu değilse None yaz
+            "z_score": z if math.isfinite(z) else None,
             "samples": len(samples),
         }
         self._emit(alert)

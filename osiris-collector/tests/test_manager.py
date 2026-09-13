@@ -41,6 +41,7 @@ def make_manager(**kwargs):
     mgr = CollectorManager.__new__(CollectorManager)
     mgr.plugins_dir = Path("plugins")
     mgr.plugins = {}
+    mgr.manifests = {}
     mgr.redis = MagicMock()
     mgr.queue_name = "q"
     mgr.scheduler = MagicMock()
@@ -131,8 +132,13 @@ def test_load_plugins_real_dir_loads_all() -> None:
 
 def test_schedule_and_cron_validation() -> None:
     mgr = make_manager()
+    mgr.plugins["ok"] = OkPlugin()
     mgr.schedule("ok", "*/15 * * * *", {})
     assert mgr.scheduler.add_job.called
+    import pytest
+
+    with pytest.raises(KeyError):
+        mgr.schedule("yok-boyle", "*/5 * * * *", {})
     for bad in ["every minute", "* * *", "a b c d e", ""]:
         with pytest.raises(ValueError):
             mgr.schedule("ok", bad, {})
@@ -240,3 +246,36 @@ def test_record_health_with_fake_db(monkeypatch) -> None:
     mgr._record_health({"source_id": "sid"}, CollectionResult(items=[]), 7)
     assert any("UPDATE sources" in q for q in executed)
     assert any("source_metrics" in q for q in executed)
+
+
+def test_required_fields_enforced_from_manifest(tmp_path) -> None:
+    import json as _json
+
+    mgr = make_manager()
+    d = tmp_path / "req"
+    d.mkdir()
+    (d / "manifest.json").write_text(_json.dumps({
+        "id": "req",
+        "config_schema": {"url": {"type": "string", "required": True},
+                          "opt": {"type": "string"}},
+    }))
+    (d / "collector.py").write_text(
+        "from osiris.plugin import BaseCollector, CollectionResult\n"
+        "class C(BaseCollector):\n"
+        "    id = 'req'\n"
+        "    def collect(self, config=None):\n"
+        "        return CollectionResult(items=[])\n")
+    mgr.plugins_dir = tmp_path
+    assert mgr.load_plugins() == 1
+    bad = mgr.run_collection("req", {})
+    assert not bad.success and "url" in (bad.error or "")
+    ok = mgr.run_collection("req", {"url": "https://example.com"})
+    assert ok.success
+
+
+def test_schedule_unknown_plugin_rejected() -> None:
+    import pytest
+
+    mgr = make_manager()
+    with pytest.raises(KeyError):
+        mgr.schedule("yok", "*/5 * * * *", {})

@@ -49,6 +49,23 @@ jobs:
         run: pip install ruff
       - name: Lint çalıştır
         run: ruff check osiris-sdk osiris-collector osiris-pipeline osiris-graph osiris-alert osiris-report osiris-query osiris-api osiris-cli plugins
+      - name: Döküman link kontrolü
+        run: |
+          python3 - << 'EOF'
+          import re
+          from pathlib import Path
+          bad = []
+          for f in [*Path('.').glob('README*.md'), *Path('docs').glob('*.md')]:
+              for m in re.finditer(r'\[[^\]]*\]\(([^)]+)\)', f.read_text()):
+                  link = m.group(1)
+                  if link.startswith(('http', '#', 'mailto:')):
+                      continue
+                  if not (f.parent / link).exists():
+                      bad.append(f'{f} -> {link}')
+          if bad:
+              raise SystemExit('Kırık linkler:\n' + '\n'.join(bad))
+          print('Döküman linkleri OK')
+          EOF
 
   security-audit:
     name: Güvenlik denetimi (pip-audit)
@@ -89,4 +106,7 @@ jobs:
         working-directory: osiris-web-ui
       - name: Derle
         run: npm run build
+        working-directory: osiris-web-ui
+      - name: Güvenlik denetimi (npm audit)
+        run: npm audit --omit=dev
         working-directory: osiris-web-ui

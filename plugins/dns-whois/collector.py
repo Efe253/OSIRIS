@@ -38,6 +38,12 @@ class DnsWhoisCollector(BaseCollector):
 
         resolver = dns.resolver.Resolver()
         resolver.lifetime = 10
+        # OPSEC: varsayılan sistem DNS'i kullanır (sızıntı yüzeyi). Tor/DNSPort
+        # veya DoH çözümleyici için config'de nameservers verin, örn:
+        # {"nameservers": ["127.0.0.1"]} (Tor DNSPort 53 dinliyorsa).
+        nameservers = cfg.get("nameservers")
+        if isinstance(nameservers, list) and nameservers:
+            resolver.nameservers = [str(ns)[:100] for ns in nameservers[:5]]
         for rtype in record_types:
             try:
                 answers = resolver.resolve(domain, rtype)

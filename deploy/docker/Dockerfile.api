@@ -32,6 +32,12 @@ RUN pip install --no-cache-dir \
 
 EXPOSE 8000
 
+# nobody kullanıcısının yazabileceği rapor dizini (ReportGenerator varsayılanı)
+RUN mkdir -p /app/reports && chown nobody:nogroup /app/reports
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+
 USER nobody
 
 CMD ["osiris-api"]

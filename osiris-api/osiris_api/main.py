@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import threading
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -49,9 +50,13 @@ if not API_KEY:
 
 _collector = CollectorManager(redis_url=REDIS_URL)
 _collector_loaded = False
+_collector_lock = threading.Lock()
 _query = QueryEngine(DATABASE_URL)
 _graph = GraphEngine(database_url=DATABASE_URL)
 _graph_loaded = False
+# RLock sart: graph_add kilidi elde tutup get_graph() cagirir (ic ice alim).
+# Lock olsaydi self-deadlock olurdu (kanit: test_graph_roundtrip asilmasi).
+_graph_lock = threading.RLock()
 
 _PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
@@ -79,12 +84,13 @@ def _page(limit: int = 100, offset: int = 0) -> tuple[int, int]:
 def get_graph() -> GraphEngine:
     """Grafı ilk kullanımda DB'den besler (best-effort kalıcılık)."""
     global _graph_loaded
-    if not _graph_loaded:
-        _graph_loaded = True
-        try:
-            _graph.load_from_db()
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Graf yüklenemedi: %s", exc)
+    with _graph_lock:
+        if not _graph_loaded:
+            _graph_loaded = True
+            try:
+                _graph.load_from_db()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Graf yüklenemedi: %s", exc)
     return _graph
 
 
@@ -201,9 +207,10 @@ require_api_key = require_auth
 
 def get_collector() -> CollectorManager:
     global _collector_loaded
-    if not _collector_loaded:
-        _collector.load_plugins()
-        _collector_loaded = True
+    with _collector_lock:
+        if not _collector_loaded:
+            _collector.load_plugins()
+            _collector_loaded = True
     return _collector
 
 
@@ -372,7 +379,7 @@ def revoke_api_key(key_id: str, ident: dict = Depends(require_admin)) -> dict[st
 def list_plugins() -> list[dict[str, Any]]:
     collector = get_collector()
     out = []
-    for pid, p in collector.plugins.items():
+    for pid, p in list(collector.plugins.items()):  # eşzamanlı güvenli anlık görüntü
         try:
             manifest = collector.get_manifest(pid)
         except (KeyError, ValueError):
@@ -620,10 +627,11 @@ def graph() -> dict[str, Any]:
 @app.post("/graph/relation", tags=["Graph"],
              summary="Graf ilişkisi ekle (kalıcı)")
 def graph_add(req: GraphAddRequest, ident: dict = Depends(require_analyst)) -> dict[str, str]:
-    g = get_graph()
-    g.add_entity(req.source)
-    g.add_entity(req.target)
-    g.add_relation(req.source, req.target, req.relation_type)
+    with _graph_lock:
+        g = get_graph()
+        g.add_entity(req.source)
+        g.add_entity(req.target)
+        g.add_relation(req.source, req.target, req.relation_type)
     try:
         g.save_to_db()
     except Exception as exc:  # noqa: BLE001

@@ -77,3 +77,14 @@ def test_entity_ok_and_validation(monkeypatch) -> None:
 def test_requires_database_url() -> None:
     with pytest.raises(ValueError):
         QueryEngine("")
+
+
+def test_non_string_inputs_rejected() -> None:
+    import pytest
+    from osiris_query.engine import QueryEngine
+
+    with pytest.raises(ValueError):
+        QueryEngine._validate_query(123)  # type: ignore[arg-type]
+    q = QueryEngine("postgresql://localhost/db")
+    with pytest.raises(ValueError):
+        q.entity_search("email", 123)  # type: ignore[arg-type]

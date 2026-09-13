@@ -42,3 +42,17 @@ def test_generate_html_escapes() -> None:
     assert "<b>B</b>" not in html
     assert "&lt;b&gt;" in html
     assert html.startswith("<!DOCTYPE html>")
+
+
+def test_ipv6_maps_to_ipv6_addr() -> None:
+    import json
+
+    from osiris_report.generator import ReportGenerator
+
+    rg = ReportGenerator(output_dir="/tmp/opencode/reports-ipv6")
+    bundle = json.loads(rg.generate_stix(
+        "X", "T", [{"type": "ip", "value": "::1"}]))
+    kinds = {o["type"] for o in bundle["objects"]}
+    patterns = [o.get("pattern", "") for o in bundle["objects"]]
+    assert any("ipv6-addr" in p for p in patterns)
+    assert "identity" in kinds

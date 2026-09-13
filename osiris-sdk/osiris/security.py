@@ -35,12 +35,18 @@ _MAX_PORT = 65535
 
 
 def _host_ips(host: str) -> list[str]:
-    """Host adını IP listesine çözer. Çözülemezse boş liste döner."""
+    """Host adını IP listesine çözer (v4+v6). Çözülemezse boş liste döner."""
     try:
-        _, _, ips = socket.gethostbyname_ex(host)
-        return ips
+        infos = socket.getaddrinfo(host, None, family=socket.AF_UNSPEC,
+                                   type=socket.SOCK_STREAM)
     except OSError:
         return []
+    ips = []
+    for info in infos:
+        sockaddr = info[4]
+        if sockaddr and sockaddr[0] not in ips:
+            ips.append(sockaddr[0])
+    return ips
 
 
 def is_blocked_host(host: str) -> bool:

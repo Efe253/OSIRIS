@@ -37,6 +37,7 @@ class CollectorManager:
         self.queue_name = queue_name
         self.database_url = database_url
         self.plugins: dict[str, BaseCollector] = {}
+        self.manifests: dict[str, dict[str, Any]] = {}
         self.scheduler = BackgroundScheduler()
 
     def load_plugins(self) -> int:
@@ -55,6 +56,9 @@ class CollectorManager:
             if not plugin_id or not isinstance(plugin_id, str):
                 logger.error("Geçersiz manifest (id yok): %s", manifest_path)
                 continue
+            if not _PLUGIN_ID_RE.match(plugin_id):
+                logger.error("Geçersiz manifest id biçimi: %s", manifest_path)
+                continue
             if plugin_id in self.plugins:
                 logger.warning("Plugin zaten yüklü, atlanıyor: %s", plugin_id)
                 continue
@@ -72,12 +76,31 @@ class CollectorManager:
                 spec.loader.exec_module(module)
                 collector_cls = self._find_collector(module)
                 self.plugins[plugin_id] = collector_cls()
+                self.manifests[plugin_id] = manifest
             except Exception as exc:  # noqa: BLE001
                 logger.error("Plugin yüklenemedi %s: %s", plugin_id, exc)
                 continue
             logger.info("Plugin yüklendi: %s", plugin_id)
             loaded += 1
         return loaded
+
+    def _missing_required(self, plugin_id: str, config: dict[str, Any]) -> list[str]:
+        """Manifest config_schema'daki required alanları denetler."""
+        schema = (getattr(self, "manifests", {}).get(plugin_id) or {}).get("config_schema") or {}
+        if not isinstance(schema, dict):
+            return []
+        missing = []
+        for field, spec in schema.items():
+            if isinstance(spec, dict) and spec.get("required"):
+                if config.get(field) in (None, ""):
+                    missing.append(str(field))
+        # Plugin sınıfının kendi doğrulayıcısına da danış
+        try:
+            extra = self.plugins[plugin_id].validate_config(config) or []
+            missing.extend(m for m in extra if m not in missing)
+        except Exception:  # noqa: BLE001
+            pass
+        return missing
 
     @staticmethod
     def _find_collector(module: Any) -> type[BaseCollector]:
@@ -97,6 +120,12 @@ class CollectorManager:
             raise KeyError(f"Plugin bulunamadı: {plugin_id}")
         if not isinstance(config, dict):
             return CollectionResult(items=[], success=False, error="config dict olmalı")
+        missing = self._missing_required(plugin_id, config)
+        if missing:
+            return CollectionResult(
+                items=[], success=False,
+                error=f"Zorunlu alanlar eksik: {', '.join(missing)}",
+            )
 
         start = time.monotonic()
         try:
@@ -222,6 +251,8 @@ class CollectorManager:
 
     def schedule(self, plugin_id: str, cron: str, config: dict[str, Any]) -> None:
         """Bir plugin için cron tabanlı zamanlama ekler (5 alanlı cron)."""
+        if plugin_id not in self.plugins:
+            raise KeyError(f"Plugin bulunamadı: {plugin_id}")
         trigger = self._cron_trigger(cron)
         self.scheduler.add_job(
             self.run_collection,

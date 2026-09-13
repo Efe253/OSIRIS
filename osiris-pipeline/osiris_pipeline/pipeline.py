@@ -227,10 +227,16 @@ class ProcessingPipeline:
             return None
         try:
             vec = model.encode(text[:8000], normalize_embeddings=True)
-            return [float(x) for x in vec]
+            floats = [float(x) for x in vec]
         except Exception as exc:  # noqa: BLE001
             logger.warning("Embedding üretilemedi: %s", exc)
             return None
+        import math
+
+        if not floats or not all(math.isfinite(x) for x in floats):
+            logger.warning("Embedding geçersiz değer içeriyor, atlandı")
+            return None
+        return floats
 
     def run(self, batch_size: int = 10) -> int:
         """Kuyruktan batch halinde kayıt işler. İşlenen kayıt sayısını döndürür."""
@@ -264,15 +270,26 @@ class ProcessingPipeline:
             return None
         import psycopg
 
-        item = result["item"]
+        item = result.get("item")
+        if not isinstance(item, dict):
+            raise ValueError("result 'item' içermeli")
         content_hash = item.get("content_hash")
         if not content_hash:
             raise ValueError("content_hash yok")
-        topics: list[str] = result.get("topics", [])
-        tags = list({*(item.get("tags") or []), *topics})[:50]
+        topics = result.get("topics") or []
+        if not isinstance(topics, list):
+            topics = []
+        raw_tags = item.get("tags") or []
+        if not isinstance(raw_tags, list):
+            raw_tags = []
+        tags = list({str(t)[:100] for t in [*raw_tags, *topics]
+                     if isinstance(t, (str, int, float))})[:50]
         embedding = result.get("embedding")
         if not isinstance(embedding, list) or not embedding:
             embedding = None
+        entities = result.get("entities") or []
+        if not isinstance(entities, list):
+            entities = []
 
         with psycopg.connect(self.database_url) as conn:
             with conn.cursor() as cur:
@@ -286,7 +303,9 @@ class ProcessingPipeline:
                     existing = cur.fetchone()
                     conn.commit()
                     return existing[0] if existing else None
-                for ent in result.get("entities", [])[:200]:
+                for ent in entities[:200]:
+                    if not isinstance(ent, dict):
+                        continue
                     etype = ent.get("type", "custom")
                     if etype not in _VALID_ENTITY_TYPES:
                         etype = "custom"

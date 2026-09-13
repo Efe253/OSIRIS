@@ -6,6 +6,7 @@
 #include <map>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include "osiris/logger.hpp"
 
@@ -46,28 +47,41 @@ bool Core::register_plugin(std::unique_ptr<Plugin> plugin) {
 }
 
 bool Core::start_plugin(const std::string& id) {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    auto it = impl_->plugins.find(id);
-    if (it == impl_->plugins.end()) {
-        Logger::instance().warn("Plugin bulunamadı: " + id);
-        return false;
+    Plugin* target = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        auto it = impl_->plugins.find(id);
+        if (it == impl_->plugins.end()) {
+            Logger::instance().warn("Plugin bulunamadı: " + id);
+            return false;
+        }
+        target = it->second.get();
     }
-    return it->second->start();
+    // NOT: sanal çağrı kilit DIŞINDA (geri-çağrı deadlock'unu önler)
+    return target->start();
 }
 
 bool Core::stop_plugin(const std::string& id) {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    if (id.empty()) {
-        for (auto& [_, plugin] : impl_->plugins) {
-            plugin->stop();
+    std::vector<Plugin*> targets;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        if (id.empty()) {
+            for (auto& [_, plugin] : impl_->plugins) {
+                targets.push_back(plugin.get());
+            }
+        } else {
+            auto it = impl_->plugins.find(id);
+            if (it == impl_->plugins.end()) {
+                return false;
+            }
+            targets.push_back(it->second.get());
         }
-        return true;
     }
-    auto it = impl_->plugins.find(id);
-    if (it == impl_->plugins.end()) {
-        return false;
+    bool ok = true;
+    for (auto* plugin : targets) {
+        ok = plugin->stop() && ok;
     }
-    return it->second->stop();
+    return ok;
 }
 
 void Core::schedule_task(const Task& task) {

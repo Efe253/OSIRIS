@@ -72,3 +72,21 @@ def test_nlp_fallback_without_spacy(monkeypatch) -> None:
     p._nlp = None
     assert p.nlp is None
     assert any(e["type"] == "email" for e in p.extract_entities("a@b.co"))
+
+
+def test_store_rejects_malformed_result() -> None:
+    import pytest
+    from osiris_pipeline.pipeline import ProcessingPipeline
+
+    p = ProcessingPipeline.__new__(ProcessingPipeline)
+    p.database_url = "postgresql://localhost/db"
+    with pytest.raises(ValueError):
+        p.store({})
+    with pytest.raises(ValueError):
+        p.store({"item": "degil-dict"})
+    # bozuk topics/tags/entities zararsızca temizlenir (DB yok → None öncesi değil;
+    # burada yalnızca şema katmanı test edilir: database_url None ile atlanır)
+    p2 = ProcessingPipeline.__new__(ProcessingPipeline)
+    p2.database_url = None
+    assert p2.store({"item": {"content_hash": "x"}, "topics": "str",
+                     "entities": {"a": 1}}) is None

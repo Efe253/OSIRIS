@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -46,7 +46,7 @@ class Item(BaseModel):
     url: str | None = None
     title: str | None = None
     language: str | None = None
-    collected_at: datetime = Field(default_factory=datetime.utcnow)
+    collected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     published_at: datetime | None = None
     content_hash: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

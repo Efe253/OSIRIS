@@ -157,6 +157,8 @@ padding:0 1rem;color:#1a1a1a}h1{border-bottom:2px solid #333}h3{color:#444}
             if not value or etype not in self._STIX_IOC:
                 continue
             stix_type, prop = self._STIX_IOC[etype]
+            if etype == "ip" and ":" in value:
+                stix_type = "ipv6-addr"  # v4 varsayımı IPv6'yı bozardı
             obj_id = f"{stix_type}--{uuid.uuid5(uuid.NAMESPACE_URL, f'{etype}:{value.lower()}')}"
             if etype == "cve":
                 objects.append({

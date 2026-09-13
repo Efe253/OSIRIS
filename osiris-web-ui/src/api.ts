@@ -9,22 +9,39 @@ export class ApiError extends Error {
 }
 
 function authHeaders(): Record<string, string> {
+  // API anahtarı öncelikli (rol sunucuda çözülür); JWT yedek.
+  // (Eski oturumlardaki bayat viewer-JWT'nin admin anahtarını ezmesini önler.)
   const key = sessionStorage.getItem("osiris_key") ?? "";
   const jwt = sessionStorage.getItem("osiris_jwt") ?? "";
-  if (jwt) return { Authorization: `Bearer ${jwt}` };
   if (key) return { "X-API-Key": key };
+  if (jwt) return { Authorization: `Bearer ${jwt}` };
   return {};
 }
 
+const REQUEST_TIMEOUT_MS = 30000;
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders(),
-      ...(init?.headers ?? {}),
-    },
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, {
+      ...init,
+      signal: ctrl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(0, "İstek zaman aşımına uğradı (30 sn)");
+    }
+    throw new ApiError(0, "Ağ hatası — sunucuya ulaşılamıyor");
+  }
+  clearTimeout(timer);
   if (res.status === 401) {
     sessionStorage.removeItem("osiris_key");
     sessionStorage.removeItem("osiris_jwt");

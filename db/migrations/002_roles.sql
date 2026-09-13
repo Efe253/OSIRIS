@@ -3,9 +3,15 @@
 -- Bkz. doküman §10.3 (RBAC) ve §5.5 (graf motoru).
 
 -- ============================================================
--- Roller (kullanıcı kimlikleri)
+-- Roller (kullanıcı kimlikleri). Tekrar çalıştırılabilirlik için korumalı.
 -- ============================================================
-CREATE TYPE user_role AS ENUM ('admin', 'analyst', 'viewer');
+DO $$
+BEGIN
+    CREATE TYPE user_role AS ENUM ('admin', 'analyst', 'viewer');
+EXCEPTION WHEN duplicate_object THEN
+    RAISE NOTICE 'type exists: %', 'user_role';
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS users (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

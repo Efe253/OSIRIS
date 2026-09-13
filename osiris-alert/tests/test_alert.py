@@ -89,3 +89,12 @@ def test_anomaly_zero_variance() -> None:
         m.record_metric("sabit", 7)
     assert m.check_anomaly("sabit", 7) is None
     assert m.check_anomaly("sabit", 9) is not None
+
+
+def test_anomaly_init_clamps_bad_values() -> None:
+    from osiris_alert.manager import AlertManager
+
+    m = AlertManager(redis_url=None, anomaly_window="cok",
+                     anomaly_threshold=float("inf"), anomaly_min_samples=None)
+    assert (m._anomaly_window, m._anomaly_threshold,
+            m._anomaly_min_samples) == (100, 3.0, 10)

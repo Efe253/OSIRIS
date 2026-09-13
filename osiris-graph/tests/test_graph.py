@@ -119,3 +119,62 @@ def test_persistence_roundtrip(monkeypatch) -> None:
     g2 = GraphEngine(database_url="postgresql://localhost/db")
     assert g2.load_from_db() == 2
     assert g2.neighbors("b") == ["a", "c"]
+
+
+def test_finite_weight_and_export_path() -> None:
+    import pytest
+    from osiris_graph.engine import GraphEngine
+
+    g = GraphEngine()
+    for bad in [float("nan"), float("inf")]:
+        with pytest.raises(ValueError):
+            g.add_relation("a", "b", weight=bad)
+    for bad in ["", "x" * 2000]:
+        with pytest.raises(ValueError):
+            g.export_graphml(bad)
+    with pytest.raises(ValueError):
+        g.load_from_db(limit="cok")  # type: ignore[arg-type]
+
+
+def test_to_json_caps() -> None:
+    import json
+
+    from osiris_graph.engine import GraphEngine
+
+    g = GraphEngine()
+    for i in range(10):
+        g.add_relation(f"n{i}", f"m{i}")
+    data = json.loads(g.to_json(limit_nodes=4, limit_edges=3))
+    assert len(data["nodes"]) == 4 and len(data["edges"]) == 3
+
+
+def test_concurrent_add_and_read_safe() -> None:
+    import threading
+
+    from osiris_graph.engine import GraphEngine
+
+    g = GraphEngine()
+    errors = []
+
+    def writer(n):
+        try:
+            for i in range(200):
+                g.add_relation(f"w{n}-{i}", f"v{n}-{i}")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def reader():
+        try:
+            for _ in range(200):
+                g.to_json(limit_nodes=50, limit_edges=50)
+                g.neighbors("w0-0")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=writer, args=(n,)) for n in range(4)]
+    threads += [threading.Thread(target=reader) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors
