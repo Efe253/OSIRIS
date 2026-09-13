@@ -61,6 +61,8 @@ services:
       N8N_BASIC_AUTH_ACTIVE: "true"
       N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
       N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-osiris_dev_password}
+      # OSIRIS workflow'larinin API cagrilari icin ({{ $env.OSIRIS_API_KEY }})
+      OSIRIS_API_KEY: ${OSIRIS_API_KEY:-}
     volumes:
       - n8ndata:/home/node/.n8n
     ports:
@@ -124,9 +126,11 @@ services:
       - redis
     volumes:
       - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/certs:/etc/nginx/certs:ro
     ports:
       - "80:80"
-      - "443:443"
+      # 443 bu makinede dolu → TLS 8443'te (bkz. nginx.conf)
+      - "8443:8443"
 
 volumes:
   pgdata:
