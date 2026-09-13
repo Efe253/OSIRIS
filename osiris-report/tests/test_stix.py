@@ -34,3 +34,11 @@ def test_generate_stix_empty_entities() -> None:
     rg = ReportGenerator(output_dir="/tmp/opencode/reports-stix")
     bundle = json.loads(rg.generate_stix("X", "T", []))
     assert len(bundle["objects"]) == 1  # yalnızca identity
+
+
+def test_generate_html_escapes() -> None:
+    rg = ReportGenerator(output_dir="/tmp/opencode/reports-html")
+    html = rg.generate_html("T", "S", "O", [{"title": "<b>B</b>", "description": "D"}], ["s"])
+    assert "<b>B</b>" not in html
+    assert "&lt;b&gt;" in html
+    assert html.startswith("<!DOCTYPE html>")

@@ -13,4 +13,5 @@ testpaths = [
     "osiris-graph/tests",
     "osiris-alert/tests",
     "osiris-report/tests",
+    "osiris-api/tests",
 ]

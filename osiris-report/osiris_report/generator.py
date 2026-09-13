@@ -89,6 +89,38 @@ class ReportGenerator:
         """JSON rapor üretir."""
         return json.dumps(data, ensure_ascii=False, indent=2)
 
+    _HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>body{font-family:system-ui,sans-serif;max-width:800px;margin:2rem auto;
+padding:0 1rem;color:#1a1a1a}h1{border-bottom:2px solid #333}h3{color:#444}
+.meta{color:#666;font-size:.9rem}li{margin:.4rem 0}</style>
+</head><body>
+<h1>{{ title }}</h1>
+<p class="meta">Oluşturulma: {{ generated_at }} · Kapsam: {{ scope }}</p>
+<h2>Özet</h2><p>{{ summary }}</p>
+<h2>Bulgular</h2>
+<ul>{% for finding in findings %}<li><strong>{{ finding.title }}</strong><br>{{ finding.description }}</li>
+{% endfor %}</ul>
+<h2>Kaynaklar</h2>
+<ul>{% for source in sources %}<li>{{ source }}</li>{% endfor %}</ul>
+</body></html>
+"""
+
+    def generate_html(self, title: str, scope: str, summary: str,
+                      findings: list[dict[str, Any]], sources: list[str]) -> str:
+        """HTML rapor üretir (autoescape açık — PDF'e giden ara adım)."""
+        template = self.env.from_string(self._HTML_TEMPLATE)
+        return template.render(
+            title=str(title)[:500],
+            generated_at=datetime.now(UTC).isoformat(),
+            scope=str(scope)[:1000],
+            summary=str(summary)[:20000],
+            findings=self._safe_findings(findings),
+            sources=[str(s)[:1000] for s in sources[:500]],
+        )
+
     # STIX 2.1 varlık eşleşmesi (doküman §2.6 — tehdit istihbaratı formatı)
     _STIX_IOC = {
         "ip": ("ipv4-addr", "value"),

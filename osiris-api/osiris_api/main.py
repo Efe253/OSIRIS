@@ -32,6 +32,7 @@ app.add_middleware(
 DATABASE_URL = os.getenv("OSIRIS_DATABASE_URL", "postgresql://osiris:osiris@localhost:5432/osiris")
 REDIS_URL = os.getenv("OSIRIS_REDIS_URL", "redis://localhost:6379/0")
 API_KEY = os.getenv("OSIRIS_API_KEY", "")
+JWT_SECRET = os.getenv("OSIRIS_JWT_SECRET", "") or API_KEY
 if not API_KEY:
     logger.warning("OSIRIS_API_KEY tanımlı değil — API kimlik doğrulamasız çalışıyor (yalnızca güvenilir ağda kullanın)")
 
@@ -43,11 +44,36 @@ _graph = GraphEngine()
 _PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
 
-def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+def _check_api_key(provided: str | None) -> bool:
+    if not API_KEY or not provided:
+        return False
+    import hmac as _hmac
+
+    return _hmac.compare_digest(provided, API_KEY)
+
+
+def require_auth(
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> None:
+    """X-API-Key veya Bearer JWT kabul eder (doküman §10.3)."""
     if not API_KEY:
+        return  # açık mod (güvenilir ağ varsayımı, başlangıçta uyarılır)
+    if _check_api_key(x_api_key):
         return
-    if x_api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    if authorization and authorization.lower().startswith("bearer "):
+        from osiris_api.auth import verify_token
+
+        try:
+            verify_token(authorization[7:].strip(), JWT_SECRET)
+            return
+        except ValueError:
+            pass
+    raise HTTPException(status_code=401, detail="Geçersiz kimlik bilgisi")
+
+
+# Geriye uyumluluk: eski bağımlılık adı
+require_api_key = require_auth
 
 
 def get_collector() -> CollectorManager:
@@ -96,6 +122,24 @@ class GraphAddRequest(BaseModel):
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "osiris-api"}
+
+
+class TokenRequest(BaseModel):
+    api_key: str = Field(min_length=1, max_length=500)
+
+
+@app.post("/auth/token")
+def issue_token(req: TokenRequest) -> dict[str, object]:
+    """API anahtarı karşılığında kısa ömürlü JWT üretir (1 saat)."""
+    if not API_KEY or not JWT_SECRET:
+        raise HTTPException(status_code=404, detail="Jeton üretimi kapalı")
+    if not _check_api_key(req.api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz kimlik bilgisi")
+    from osiris_api.auth import create_token
+
+    token = create_token("api-client", JWT_SECRET)
+    _audit("auth.token", None, None)
+    return token
 
 
 @app.get("/plugins", dependencies=[Depends(require_api_key)])
