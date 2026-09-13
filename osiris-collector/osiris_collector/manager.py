@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-import importlib
+import importlib.util
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
 
 import redis
 from apscheduler.schedulers.background import BackgroundScheduler
-
+from apscheduler.triggers.cron import CronTrigger
 from osiris.plugin import BaseCollector, CollectionResult
 
 logger = logging.getLogger(__name__)
+
+_MAX_QUEUE_ITEM_BYTES = 512_000
+_CRON_PART_RE = re.compile(r"^[\d,/*-]+$")
 
 
 class CollectorManager:
@@ -35,20 +39,39 @@ class CollectorManager:
     def load_plugins(self) -> int:
         """plugins/ dizinindeki tüm plugin'leri yükler."""
         loaded = 0
-        for manifest_path in self.plugins_dir.glob("*/manifest.json"):
-            manifest = json.loads(manifest_path.read_text())
-            plugin_id = manifest["id"]
+        if not self.plugins_dir.is_dir():
+            logger.error("Plugin dizini bulunamadı: %s", self.plugins_dir)
+            return 0
+        for manifest_path in sorted(self.plugins_dir.glob("*/manifest.json")):
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.error("manifest okunamadı %s: %s", manifest_path, exc)
+                continue
+            plugin_id = manifest.get("id")
+            if not plugin_id or not isinstance(plugin_id, str):
+                logger.error("Geçersiz manifest (id yok): %s", manifest_path)
+                continue
+            if plugin_id in self.plugins:
+                logger.warning("Plugin zaten yüklü, atlanıyor: %s", plugin_id)
+                continue
             collector_path = manifest_path.parent / "collector.py"
-            if not collector_path.exists():
+            if not collector_path.is_file():
                 logger.error("collector.py bulunamadı: %s", plugin_id)
                 continue
-            spec = importlib.util.spec_from_file_location(
-                f"{plugin_id.replace('-', '_')}_collector", collector_path
-            )
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            collector_cls = self._find_collector(module)
-            self.plugins[plugin_id] = collector_cls()
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    f"{plugin_id.replace('-', '_')}_collector", collector_path
+                )
+                if spec is None or spec.loader is None:
+                    raise ImportError("modül spec oluşturulamadı")
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                collector_cls = self._find_collector(module)
+                self.plugins[plugin_id] = collector_cls()
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Plugin yüklenemedi %s: %s", plugin_id, exc)
+                continue
             logger.info("Plugin yüklendi: %s", plugin_id)
             loaded += 1
         return loaded
@@ -69,54 +92,78 @@ class CollectorManager:
         plugin = self.plugins.get(plugin_id)
         if plugin is None:
             raise KeyError(f"Plugin bulunamadı: {plugin_id}")
+        if not isinstance(config, dict):
+            return CollectionResult(items=[], success=False, error="config dict olmalı")
 
         start = time.monotonic()
-        result = plugin.collect(config)
+        try:
+            result = plugin.collect(config)
+        except Exception as exc:  # noqa: BLE001 — plugin crash'i yöneticiyi düşürmemeli
+            logger.exception("%s: plugin çöktü", plugin_id)
+            return CollectionResult(items=[], success=False, error=f"plugin hatası: {exc}")
         elapsed_ms = int((time.monotonic() - start) * 1000)
 
         if result.success:
+            enqueued = 0
             for item in result.items:
-                self.redis.rpush(
-                    self.queue_name,
-                    json.dumps(
+                try:
+                    payload = json.dumps(
                         {
                             "plugin_id": plugin_id,
                             "item": item.model_dump(),
                             "collected_at": time.time(),
-                        }
-                    ),
-                )
+                        },
+                        ensure_ascii=False,
+                    )
+                except (TypeError, ValueError) as exc:
+                    logger.warning("%s: öğe serileştirilemedi: %s", plugin_id, exc)
+                    continue
+                if len(payload.encode("utf-8")) > _MAX_QUEUE_ITEM_BYTES:
+                    logger.warning("%s: öğe çok büyük, atlandı", plugin_id)
+                    continue
+                try:
+                    self.redis.rpush(self.queue_name, payload)
+                    enqueued += 1
+                except redis.RedisError as exc:
+                    logger.error("%s: kuyruğa yazılamadı: %s", plugin_id, exc)
+                    return CollectionResult(
+                        items=result.items, success=False, error=f"kuyruk hatası: {exc}"
+                    )
             logger.info(
-                "%s: %d öğe toplandı (%d ms)",
+                "%s: %d öğe toplandı (%d ms, %d kuyrukta)",
                 plugin_id,
                 len(result.items),
                 elapsed_ms,
+                enqueued,
             )
         else:
             logger.warning("%s: başarısız — %s", plugin_id, result.error)
         return result
 
     def schedule(self, plugin_id: str, cron: str, config: dict[str, Any]) -> None:
-        """Bir plugin için cron tabanlı zamanlama ekler."""
-        hour, minute = self._parse_cron(cron)
+        """Bir plugin için cron tabanlı zamanlama ekler (5 alanlı cron)."""
+        trigger = self._cron_trigger(cron)
         self.scheduler.add_job(
             self.run_collection,
-            "cron",
-            hour=hour,
-            minute=minute,
+            trigger,
             args=[plugin_id, config],
             id=f"{plugin_id}-{cron}",
             replace_existing=True,
+            max_instances=1,
+            coalesce=True,
         )
         logger.info("Zamanlandı: %s (%s)", plugin_id, cron)
 
     @staticmethod
-    def _parse_cron(cron: str) -> tuple[int, int]:
-        """Basit 'm h * * *' cron ayrıştırma. Faz 2'de tam destek eklenecek."""
-        parts = cron.split()
-        minute = int(parts[0]) if parts[0].isdigit() else 0
-        hour = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-        return hour, minute
+    def _cron_trigger(cron: str) -> CronTrigger:
+        """'m h dom mon dow' cron ifadesini doğrular ve trigger üretir."""
+        parts = cron.strip().split()
+        if len(parts) != 5 or any(not _CRON_PART_RE.match(p) for p in parts):
+            raise ValueError(f"Geçersiz cron (5 alan gerekli): {cron!r}")
+        minute, hour, day, month, dow = parts
+        return CronTrigger(
+            minute=minute, hour=hour, day=day, month=month, day_of_week=dow
+        )
 
     def start(self) -> None:
         self.scheduler.start()

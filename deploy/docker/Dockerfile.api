@@ -1,0 +1,30 @@
+# OSIRIS API — uygulama imajı
+# Kullanım: docker compose --profile api up -d --build
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Önce SDK ve dahili modüller (katman önbelleği için)
+COPY osiris-sdk ./osiris-sdk
+COPY osiris-collector ./osiris-collector
+COPY osiris-graph ./osiris-graph
+COPY osiris-query ./osiris-query
+COPY osiris-api ./osiris-api
+COPY plugins ./plugins
+
+RUN pip install --no-cache-dir \
+    ./osiris-sdk \
+    ./osiris-collector \
+    ./osiris-graph \
+    ./osiris-query \
+    ./osiris-api
+
+EXPOSE 8000
+
+USER nobody
+
+CMD ["osiris-api"]

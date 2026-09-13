@@ -4,8 +4,8 @@ Plugin geliştirme arayüzü ve ortak veri modelleri.
 Bkz. doküman §12.3.
 """
 
-from osiris.plugin import BaseCollector, CollectionResult, CollectedItem
-from osiris.models import Source, Entity, Item
+from osiris.models import Entity, Item, Source
+from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
 
 __all__ = [
     "BaseCollector",

@@ -6,8 +6,11 @@ from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
-
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
+from osiris.security import safe_title
+
+_HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
+_MAX_BYTES = 2_000_000
 
 
 class TorCollector(BaseCollector):
@@ -17,30 +20,44 @@ class TorCollector(BaseCollector):
 
     def _session(self, cfg: dict[str, Any]) -> requests.Session:
         session = requests.Session()
-        session.proxies = {
-            "http": f"socks5h://{cfg.get('socks5_host', '127.0.0.1')}:{cfg.get('socks5_port', 9050)}",
-            "https": f"socks5h://{cfg.get('socks5_host', '127.0.0.1')}:{cfg.get('socks5_port', 9050)}",
-        }
+        try:
+            host = str(cfg.get("socks5_host", "127.0.0.1"))
+            port = int(cfg.get("socks5_port", 9050))
+        except (TypeError, ValueError):
+            host, port = "127.0.0.1", 9050
+        if host not in ("127.0.0.1", "::1"):
+            raise ValueError("SOCKS5 host yalnızca localhost olabilir")
+        if not 1 <= port <= 65535:
+            raise ValueError("Geçersiz SOCKS5 portu")
+        proxy = f"socks5h://{host}:{port}"
+        session.proxies = {"http": proxy, "https": proxy}
+        session.headers.update(_HEADERS)
         return session
 
     def collect(self, config: dict[str, Any] | None = None) -> CollectionResult:
         cfg = config or self.config
         url = cfg.get("url")
-        if not url:
+        if not url or not isinstance(url, str):
             return CollectionResult(items=[], success=False, error="url gerekli")
+        if ".onion" not in url:
+            return CollectionResult(items=[], success=False, error=".onion adresi gerekli")
 
         try:
-            resp = self._session(cfg).get(url, timeout=60)
+            session = self._session(cfg)
+        except ValueError as exc:
+            return CollectionResult(items=[], success=False, error=str(exc))
+        try:
+            resp = session.get(url, timeout=60, verify=True)
             resp.raise_for_status()
         except requests.RequestException as exc:
-            return CollectionResult(items=[], success=False, error=str(exc))
+            return CollectionResult(items=[], success=False, error=str(exc)[:500])
 
-        soup = BeautifulSoup(resp.text, "html.parser")
-        text = soup.get_text(" ", strip=True)
+        soup = BeautifulSoup(resp.text[:_MAX_BYTES], "html.parser")
+        text = soup.get_text(" ", strip=True)[:50_000]
         items = [
             CollectedItem(
-                url=url,
-                title=soup.title.string.strip() if soup.title else None,
+                url=url[:2048],
+                title=safe_title(soup),
                 raw_content=text,
                 metadata={"network": "tor"},
             )
@@ -49,9 +66,9 @@ class TorCollector(BaseCollector):
 
     def health_check(self) -> bool:
         url = self.config.get("url")
-        if not url:
+        if not url or not isinstance(url, str):
             return False
         try:
-            return self._session(self.config).get(url, timeout=30).status_code < 500
-        except requests.RequestException:
+            return self._session(self.config).get(url, timeout=30, verify=True).status_code < 500
+        except (requests.RequestException, ValueError):
             return False
